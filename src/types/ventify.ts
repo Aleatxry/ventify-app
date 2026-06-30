@@ -60,6 +60,12 @@ export interface Vitals {
   spo2: number;
 }
 
+export interface FluidBalance {
+  intakeMl: number;
+  outputMl: number;
+  netMl: number;
+}
+
 export interface BedData {
   bedId: string;
   patientId: string;
@@ -70,6 +76,7 @@ export interface BedData {
   breathHistory: Severity[];
   waveformBuffer: WaveformPoint[];
   vitals: Vitals | null;
+  fluidBalance: FluidBalance | null;
   isConnected: boolean;
   newsScore: number;
   newsTrend: "up" | "down" | "stable";

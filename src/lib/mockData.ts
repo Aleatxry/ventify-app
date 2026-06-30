@@ -1,6 +1,6 @@
 "use client";
 
-import type { BreathPrediction, BedData, Severity, PVAFlag, Vitals, WaveformPoint } from "@/types/ventify";
+import type { BreathPrediction, BedData, Severity, PVAFlag, Vitals, WaveformPoint, FluidBalance } from "@/types/ventify";
 import { getSeverityFromInstability } from "./constants";
 
 function randn(mean = 0, std = 1): number {
@@ -27,15 +27,16 @@ interface BedConfig {
   baseNews: number;
   baseInstability: number;
   newsTrend: "up" | "down" | "stable";
+  baseNetIO: number;
 }
 
 const BED_CONFIGS: BedConfig[] = [
-  { bedId: "01", patientId: "KW2847", isVentilated: true,  weights: [0.05, 0.30, 0.65], baseHr: 107, baseSbp: 97,  baseDbp: 46,  baseSpo2: 90, baseNews: 13, baseInstability: 74, newsTrend: "up"    },
-  { bedId: "03", patientId: "PM5531", isVentilated: true,  weights: [0.55, 0.38, 0.07], baseHr: 80,  baseSbp: 122, baseDbp: 76,  baseSpo2: 99, baseNews: 5,  baseInstability: 26, newsTrend: "up"    },
-  { bedId: "05", patientId: "RN7714", isVentilated: true,  weights: [0.35, 0.52, 0.13], baseHr: 140, baseSbp: 107, baseDbp: 83,  baseSpo2: 97, baseNews: 12, baseInstability: 52, newsTrend: "down"  },
-  { bedId: "06", patientId: "BT9023", isVentilated: false, weights: [1.00, 0.00, 0.00], baseHr: 88,  baseSbp: 137, baseDbp: 76,  baseSpo2: 98, baseNews: 7,  baseInstability: 0,  newsTrend: "down"  },
-  { bedId: "07", patientId: "HK4482", isVentilated: true,  weights: [0.82, 0.15, 0.03], baseHr: 109, baseSbp: 112, baseDbp: 98,  baseSpo2: 99, baseNews: 3,  baseInstability: 12, newsTrend: "stable"},
-  { bedId: "09", patientId: "SL3391", isVentilated: true,  weights: [0.15, 0.55, 0.30], baseHr: 95,  baseSbp: 105, baseDbp: 65,  baseSpo2: 94, baseNews: 9,  baseInstability: 63, newsTrend: "up"    },
+  { bedId: "01", patientId: "KW2847", isVentilated: true,  weights: [0.05, 0.30, 0.65], baseHr: 107, baseSbp: 97,  baseDbp: 46,  baseSpo2: 90, baseNews: 13, baseInstability: 74, newsTrend: "up",    baseNetIO:  1820 },
+  { bedId: "03", patientId: "PM5531", isVentilated: true,  weights: [0.55, 0.38, 0.07], baseHr: 80,  baseSbp: 122, baseDbp: 76,  baseSpo2: 99, baseNews: 5,  baseInstability: 26, newsTrend: "up",    baseNetIO:   210 },
+  { bedId: "05", patientId: "RN7714", isVentilated: true,  weights: [0.35, 0.52, 0.13], baseHr: 140, baseSbp: 107, baseDbp: 83,  baseSpo2: 97, baseNews: 12, baseInstability: 52, newsTrend: "down",  baseNetIO:   960 },
+  { bedId: "06", patientId: "BT9023", isVentilated: false, weights: [1.00, 0.00, 0.00], baseHr: 88,  baseSbp: 137, baseDbp: 76,  baseSpo2: 98, baseNews: 7,  baseInstability: 0,  newsTrend: "down",  baseNetIO:  -180 },
+  { bedId: "07", patientId: "HK4482", isVentilated: true,  weights: [0.82, 0.15, 0.03], baseHr: 109, baseSbp: 112, baseDbp: 98,  baseSpo2: 99, baseNews: 3,  baseInstability: 12, newsTrend: "stable", baseNetIO:    70 },
+  { bedId: "09", patientId: "SL3391", isVentilated: true,  weights: [0.15, 0.55, 0.30], baseHr: 95,  baseSbp: 105, baseDbp: 65,  baseSpo2: 94, baseNews: 9,  baseInstability: 63, newsTrend: "up",    baseNetIO:  1240 },
 ];
 
 function pickSeverity(weights: SeverityWeights): Severity {
@@ -113,6 +114,13 @@ function generateBreath(config: BedConfig, breathIdx: number): BreathPrediction 
   };
 }
 
+function generateFluidBalance(config: BedConfig, currentNet: number): FluidBalance {
+  const intakeMl  = Math.round(clamp(randn(2100, 80), 1200, 3200));
+  const netMl     = Math.round(clamp(currentNet + randn(0, 15), -800, 3500));
+  const outputMl  = Math.round(clamp(intakeMl - netMl, 400, 2800));
+  return { intakeMl, outputMl, netMl };
+}
+
 function generateVitals(config: BedConfig): Vitals {
   const sbp = Math.round(clamp(randn(config.baseSbp, 4), 70, 200));
   const dbp = Math.round(clamp(randn(config.baseDbp, 3), 40, 120));
@@ -147,10 +155,12 @@ export function createMockWard(onUpdate: BedUpdateCallback) {
   const intervals: ReturnType<typeof setTimeout>[] = [];
   const breathCounters: Record<string, number> = {};
   const instabilityValues: Record<string, number> = {};
+  const netIOValues: Record<string, number> = {};
 
   BED_CONFIGS.forEach(cfg => {
     breathCounters[cfg.bedId] = 1000 + Math.floor(Math.random() * 600);
     instabilityValues[cfg.bedId] = cfg.baseInstability + randn(0, 5);
+    netIOValues[cfg.bedId] = cfg.baseNetIO + randn(0, 30);
   });
 
   function getInitialData(): BedData[] {
@@ -179,6 +189,7 @@ export function createMockWard(onUpdate: BedUpdateCallback) {
         breathHistory,
         waveformBuffer,
         vitals,
+        fluidBalance: generateFluidBalance(cfg, netIOValues[cfg.bedId]),
         isConnected: true,
         newsScore: cfg.baseNews,
         newsTrend: cfg.newsTrend,
@@ -233,7 +244,11 @@ export function createMockWard(onUpdate: BedUpdateCallback) {
 
     const vitalsInterval = setInterval(() => {
       BED_CONFIGS.forEach(cfg => {
-        onUpdate(cfg.bedId, { vitals: generateVitals(cfg) });
+        netIOValues[cfg.bedId] = clamp(netIOValues[cfg.bedId] + randn(0, 20), -800, 3500);
+        onUpdate(cfg.bedId, {
+          vitals: generateVitals(cfg),
+          fluidBalance: generateFluidBalance(cfg, netIOValues[cfg.bedId]),
+        });
       });
     }, 5000);
     intervals.push(vitalsInterval);

@@ -48,6 +48,28 @@ function VitalCell({ value, critical }: { value: number | string | null; critica
   );
 }
 
+function IOCell({ netMl }: { netMl: number | null }) {
+  if (netMl === null) return <span style={{ color: "var(--v-text-2)" }}>—</span>;
+
+  const color =
+    netMl > 1500 ? "var(--v-critical)" :
+    netMl > 500  ? "var(--v-elevated)" :
+    netMl < -400 ? "var(--v-accent)"   :
+    "var(--v-text-1)";
+
+  const sign = netMl > 0 ? "+" : "";
+  const formatted = `${sign}${netMl.toLocaleString()}`;
+
+  return (
+    <div className="flex flex-col gap-0">
+      <span className="font-mono-nums text-[14px] font-medium" style={{ color }}>
+        {formatted}
+      </span>
+      <span className="text-[10px]" style={{ color: "var(--v-text-3)" }}>mL</span>
+    </div>
+  );
+}
+
 export default function WardTable({ beds }: WardTableProps) {
   const router = useRouter();
 
@@ -60,12 +82,12 @@ export default function WardTable({ beds }: WardTableProps) {
       <div
         className="grid items-center px-6 py-3"
         style={{
-          gridTemplateColumns: "64px 1fr 120px 90px 120px 72px 80px 140px",
+          gridTemplateColumns: "64px 1fr 120px 90px 120px 64px 72px 96px 140px",
           borderBottom: "1px solid var(--v-divider)",
           backgroundColor: "var(--v-surface-raised)",
         }}
       >
-        {["Bed", "Patient", "Alert", "HR", "BP (MAP)", "SpO₂", "NEWS", "PVA Type"].map(col => (
+        {["Bed", "Patient", "Alert", "HR", "BP (MAP)", "SpO₂", "NEWS", "I/O", "PVA Type"].map(col => (
           <span
             key={col}
             className="text-[10px] font-semibold uppercase tracking-widest"
@@ -87,7 +109,7 @@ export default function WardTable({ beds }: WardTableProps) {
             onClick={() => router.push(`/patient/${bed.bedId}`)}
             className="grid w-full items-center px-6 text-left transition-all duration-150 cursor-pointer"
             style={{
-              gridTemplateColumns: "64px 1fr 120px 90px 120px 72px 80px 140px",
+              gridTemplateColumns: "64px 1fr 120px 90px 120px 64px 72px 96px 140px",
               minHeight: "72px",
               borderBottom: i < beds.length - 1 ? "1px solid var(--v-divider)" : "none",
               backgroundColor: isCritical
@@ -159,6 +181,9 @@ export default function WardTable({ beds }: WardTableProps) {
 
             {/* NEWS */}
             <NewsScore score={bed.newsScore} trend={bed.newsTrend} />
+
+            {/* I/O */}
+            <IOCell netMl={bed.fluidBalance?.netMl ?? null} />
 
             {/* PVA Type */}
             <PVACell latestPrediction={bed.latestPrediction} />
