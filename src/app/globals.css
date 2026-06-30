@@ -1,26 +1,128 @@
 @import "tailwindcss";
 
+/* ─── Design tokens ──────────────────────────────────────────── */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Surfaces */
+  --v-bg:             #F5F5F7;
+  --v-surface:        #FFFFFF;
+  --v-surface-raised: #F2F2F7;
+
+  /* Typography */
+  --v-text-1:  #1D1D1F;
+  --v-text-2:  #6E6E73;
+  --v-text-3:  #98989D;
+
+  /* Brand */
+  --v-accent:      #0071E3;
+  --v-accent-pale: rgba(0,113,227,0.08);
+
+  /* Structure */
+  --v-divider:      #E5E5EA;
+  --v-shadow-card:  0 2px 10px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04);
+  --v-shadow-hover: 0 4px 20px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.04);
+
+  /* Header */
+  --v-header-bg:     rgba(255,255,255,0.88);
+  --v-header-border: #E5E5EA;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+[data-theme="dark"] {
+  --v-bg:             #000000;
+  --v-surface:        #1C1C1E;
+  --v-surface-raised: #2C2C2E;
+  --v-text-1:  #F5F5F7;
+  --v-text-2:  #98989D;
+  --v-text-3:  #6E6E73;
+  --v-accent:      #0A84FF;
+  --v-accent-pale: rgba(10,132,255,0.12);
+  --v-divider:      #38383A;
+  --v-shadow-card:  0 2px 10px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.06);
+  --v-shadow-hover: 0 4px 20px rgba(0,0,0,0.50), 0 0 0 1px rgba(255,255,255,0.08);
+  --v-header-bg:     rgba(0,0,0,0.82);
+  --v-header-border: #38383A;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* Status — identical in both modes */
+:root {
+  --v-normal:        #34C759;
+  --v-elevated:      #FF9500;
+  --v-critical:      #FF3B30;
+  --v-normal-pale:   rgba(52,199,89,0.12);
+  --v-elevated-pale: rgba(255,149,0,0.12);
+  --v-critical-pale: rgba(255,59,48,0.10);
+}
+
+/* ─── Animations ─────────────────────────────────────────────── */
+
+@keyframes pulse-badge {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}
+
+@keyframes slide-in-left {
+  from { transform: translateX(-12px); opacity: 0; }
+  to   { transform: translateX(0);     opacity: 1; }
+}
+
+@keyframes live-dot {
+  0%, 100% { opacity: 1;    transform: scale(1); }
+  50%       { opacity: 0.3; transform: scale(0.7); }
+}
+
+@keyframes fade-up {
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration:  0.01ms !important;
+    transition-duration: 0.01ms !important;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ─── Base ───────────────────────────────────────────────────── */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  color-scheme: light;
 }
+[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--v-bg);
+  color:            var(--v-text-1);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+               "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing:  antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 250ms ease, color 250ms ease;
+}
+
+:focus-visible {
+  outline:        2px solid var(--v-accent);
+  outline-offset: 2px;
+  border-radius:  4px;
+}
+
+/* ─── Utility classes ────────────────────────────────────────── */
+
+.font-mono-nums {
+  font-family:          "Menlo", "Monaco", "Courier New", Courier, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.v-card {
+  background:   var(--v-surface);
+  border-radius: 20px;
+  box-shadow:   var(--v-shadow-card);
+}
+
+.animate-pulse-badge { animation: pulse-badge   1.8s ease-in-out infinite; }
+.animate-slide-in    { animation: slide-in-left 0.22s cubic-bezier(0.4,0,0.2,1) forwards; }
+.animate-live-dot    { animation: live-dot      2s   ease-in-out infinite; }
+.animate-fade-up     { animation: fade-up       0.28s cubic-bezier(0.4,0,0.2,1) forwards; }
