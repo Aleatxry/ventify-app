@@ -141,7 +141,7 @@ export default function WardTable({ beds }: WardTableProps) {
             {/* Patient info */}
             <div className="flex flex-col justify-center">
               <div className="flex items-center gap-2">
-                {bed.isVentilated && <LungIcon size={16} color="var(--v-accent)" />}
+                {bed.isVentilated && <LungIcon size={16} />}
                 <span className="text-[14px] font-semibold" style={{ color: "var(--v-text-1)" }}>
                   {bed.patientId}
                 </span>

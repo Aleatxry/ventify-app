@@ -71,7 +71,7 @@ export default function Header({
               Ward
             </Link>
           )}
-          <LungIcon size={22} color="var(--v-accent)" />
+          <LungIcon size={22} />
           <span className="text-[18px] font-bold tracking-[-0.3px]" style={{ color: "var(--v-text-1)" }}>
             Ventify
           </span>
