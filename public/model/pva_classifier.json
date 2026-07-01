@@ -1,0 +1,60 @@
+{
+  "type": "decision_tree",
+  "features": [
+    "pip",
+    "peep",
+    "vt",
+    "driving_p",
+    "i_time",
+    "e_time",
+    "ie_ratio",
+    "peak_flow",
+    "flow_at_end_insp"
+  ],
+  "classes": [
+    "Normal",
+    "flow_starvation",
+    "ineffective_effort"
+  ],
+  "tree": {
+    "feature": "flow_at_end_insp",
+    "threshold": 35.2,
+    "left": {
+      "feature": "peak_flow",
+      "threshold": 67.8,
+      "left": {
+        "leaf": true,
+        "class": "flow_starvation",
+        "confidence": 1.0
+      },
+      "right": {
+        "leaf": true,
+        "class": "Normal",
+        "confidence": 1.0
+      }
+    },
+    "right": {
+      "feature": "i_time",
+      "threshold": 0.46,
+      "left": {
+        "feature": "peep",
+        "threshold": 3.55,
+        "left": {
+          "leaf": true,
+          "class": "flow_starvation",
+          "confidence": 1.0
+        },
+        "right": {
+          "leaf": true,
+          "class": "Normal",
+          "confidence": 0.5
+        }
+      },
+      "right": {
+        "leaf": true,
+        "class": "flow_starvation",
+        "confidence": 1.0
+      }
+    }
+  }
+}
