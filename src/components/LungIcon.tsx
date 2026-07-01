@@ -4,13 +4,13 @@ interface LungIconProps {
   size?: number;
 }
 
-export default function LungIcon({ size = 18 }: LungIconProps) {
+export default function LungIcon({ size = 24 }: LungIconProps) {
   return (
     <Image
       src="/lung-icon.png"
       alt="On ventilator"
       width={size}
-      height={Math.round(size * 512 / 820)}
+      height={Math.round(size * 656 / 766)}
       style={{ objectFit: "contain" }}
     />
   );
