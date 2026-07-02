@@ -8,6 +8,7 @@ import CurrentPVACard from "@/components/CurrentPVACard";
 import MetricsPanel from "@/components/MetricsPanel";
 import VitalsStrip from "@/components/VitalsStrip";
 import AlertFeed from "@/components/AlertFeed";
+import PatientInfoCard from "@/components/PatientInfoCard";
 import EmptyState from "@/components/EmptyState";
 import { useVentifyStream } from "@/hooks/useVentifyStream";
 
@@ -59,6 +60,7 @@ export default function PatientPage({ params }: { params: Promise<{ bedId: strin
 
           {/* RIGHT: info cards */}
           <div className="flex flex-col gap-4">
+            {bedData.patientInfo && <PatientInfoCard info={bedData.patientInfo} />}
             <InstabilityCard index={bedData.instabilityIndex} />
             <CurrentPVACard prediction={bedData.latestPrediction} />
             <MetricsPanel metrics={bedData.latestPrediction?.metrics ?? null} />

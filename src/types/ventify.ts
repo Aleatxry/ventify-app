@@ -66,6 +66,18 @@ export interface FluidBalance {
   netMl: number;
 }
 
+export interface PatientInfo {
+  age: number;
+  gender: "ช" | "ญ";
+  weightKg: number | null;
+  heightCm: number | null;
+  bmi: number | null;
+  pdx: string;
+  sdx: string;
+  operations: string[];
+  dayOnVent: number;
+}
+
 export interface BedData {
   bedId: string;
   patientId: string;
@@ -80,4 +92,5 @@ export interface BedData {
   isConnected: boolean;
   newsScore: number;
   newsTrend: "up" | "down" | "stable";
+  patientInfo: PatientInfo | null;
 }

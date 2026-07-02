@@ -1,6 +1,6 @@
 "use client";
 
-import type { BreathPrediction, BedData, Severity, PVAFlag, Vitals, WaveformPoint, FluidBalance } from "@/types/ventify";
+import type { BreathPrediction, BedData, Severity, PVAFlag, Vitals, WaveformPoint, FluidBalance, PatientInfo } from "@/types/ventify";
 import { getSeverityFromInstability } from "./constants";
 
 function randn(mean = 0, std = 1): number {
@@ -28,15 +28,82 @@ interface BedConfig {
   baseInstability: number;
   newsTrend: "up" | "down" | "stable";
   baseNetIO: number;
+  patientInfo: PatientInfo | null;
 }
 
 const BED_CONFIGS: BedConfig[] = [
-  { bedId: "01", patientId: "KW2847", isVentilated: true,  weights: [0.05, 0.30, 0.65], baseHr: 107, baseSbp: 97,  baseDbp: 46,  baseSpo2: 90, baseNews: 13, baseInstability: 74, newsTrend: "up",    baseNetIO:  1820 },
-  { bedId: "03", patientId: "PM5531", isVentilated: true,  weights: [0.55, 0.38, 0.07], baseHr: 80,  baseSbp: 122, baseDbp: 76,  baseSpo2: 99, baseNews: 5,  baseInstability: 26, newsTrend: "up",    baseNetIO:   210 },
-  { bedId: "05", patientId: "RN7714", isVentilated: true,  weights: [0.35, 0.52, 0.13], baseHr: 140, baseSbp: 107, baseDbp: 83,  baseSpo2: 97, baseNews: 12, baseInstability: 52, newsTrend: "down",  baseNetIO:   960 },
-  { bedId: "06", patientId: "BT9023", isVentilated: false, weights: [1.00, 0.00, 0.00], baseHr: 88,  baseSbp: 137, baseDbp: 76,  baseSpo2: 98, baseNews: 7,  baseInstability: 0,  newsTrend: "down",  baseNetIO:  -180 },
-  { bedId: "07", patientId: "HK4482", isVentilated: true,  weights: [0.82, 0.15, 0.03], baseHr: 109, baseSbp: 112, baseDbp: 98,  baseSpo2: 99, baseNews: 3,  baseInstability: 12, newsTrend: "stable", baseNetIO:    70 },
-  { bedId: "09", patientId: "SL3391", isVentilated: true,  weights: [0.15, 0.55, 0.30], baseHr: 95,  baseSbp: 105, baseDbp: 65,  baseSpo2: 94, baseNews: 9,  baseInstability: 63, newsTrend: "up",    baseNetIO:  1240 },
+  {
+    bedId: "01", patientId: "KW2847", isVentilated: true,
+    weights: [0.05, 0.30, 0.65], baseHr: 107, baseSbp: 97, baseDbp: 46, baseSpo2: 90,
+    baseNews: 13, baseInstability: 74, newsTrend: "up", baseNetIO: 1820,
+    patientInfo: {
+      age: 87, gender: "ช", weightKg: 45, heightCm: 160, bmi: 17.6,
+      pdx: "Aspiration pneumonia (J69.0)",
+      sdx: "Septic shock (A41.9)",
+      operations: ["Endotracheal intubation", "Mechanical ventilation"],
+      dayOnVent: 3,
+    },
+  },
+  {
+    bedId: "03", patientId: "PM5531", isVentilated: true,
+    weights: [0.55, 0.38, 0.07], baseHr: 80, baseSbp: 122, baseDbp: 76, baseSpo2: 99,
+    baseNews: 5, baseInstability: 26, newsTrend: "up", baseNetIO: 210,
+    patientInfo: {
+      age: 62, gender: "ญ", weightKg: 58, heightCm: 155, bmi: 24.1,
+      pdx: "COPD exacerbation (J44.1)",
+      sdx: "Type 2 respiratory failure (J96.0)",
+      operations: ["Non-invasive ventilation", "Mechanical ventilation"],
+      dayOnVent: 7,
+    },
+  },
+  {
+    bedId: "05", patientId: "RN7714", isVentilated: true,
+    weights: [0.35, 0.52, 0.13], baseHr: 140, baseSbp: 107, baseDbp: 83, baseSpo2: 97,
+    baseNews: 12, baseInstability: 52, newsTrend: "down", baseNetIO: 960,
+    patientInfo: {
+      age: 54, gender: "ช", weightKg: 72, heightCm: 170, bmi: 24.9,
+      pdx: "Acute respiratory distress syndrome (J80)",
+      sdx: "Community-acquired pneumonia (J18.9)",
+      operations: ["Endotracheal intubation", "Mechanical ventilation", "Central venous catheter"],
+      dayOnVent: 12,
+    },
+  },
+  {
+    bedId: "06", patientId: "BT9023", isVentilated: false,
+    weights: [1.00, 0.00, 0.00], baseHr: 88, baseSbp: 137, baseDbp: 76, baseSpo2: 98,
+    baseNews: 7, baseInstability: 0, newsTrend: "down", baseNetIO: -180,
+    patientInfo: {
+      age: 70, gender: "ญ", weightKg: 63, heightCm: 158, bmi: 25.2,
+      pdx: "Heart failure (I50.0)",
+      sdx: "Hypertension (I10)",
+      operations: ["Cardiac monitoring"],
+      dayOnVent: 0,
+    },
+  },
+  {
+    bedId: "07", patientId: "HK4482", isVentilated: true,
+    weights: [0.82, 0.15, 0.03], baseHr: 109, baseSbp: 112, baseDbp: 98, baseSpo2: 99,
+    baseNews: 3, baseInstability: 12, newsTrend: "stable", baseNetIO: 70,
+    patientInfo: {
+      age: 41, gender: "ช", weightKg: 80, heightCm: 175, bmi: 26.1,
+      pdx: "Post-operative respiratory support",
+      sdx: "Colorectal surgery (Z96.89)",
+      operations: ["Endotracheal intubation", "Mechanical ventilation"],
+      dayOnVent: 2,
+    },
+  },
+  {
+    bedId: "09", patientId: "SL3391", isVentilated: true,
+    weights: [0.15, 0.55, 0.30], baseHr: 95, baseSbp: 105, baseDbp: 65, baseSpo2: 94,
+    baseNews: 9, baseInstability: 63, newsTrend: "up", baseNetIO: 1240,
+    patientInfo: {
+      age: 76, gender: "ญ", weightKg: 50, heightCm: 152, bmi: 21.6,
+      pdx: "Sepsis (A41.9)",
+      sdx: "Acute kidney injury (N17.9)",
+      operations: ["Endotracheal intubation", "Mechanical ventilation", "Renal replacement therapy"],
+      dayOnVent: 9,
+    },
+  },
 ];
 
 function pickSeverity(weights: SeverityWeights): Severity {
@@ -193,6 +260,7 @@ export function createMockWard(onUpdate: BedUpdateCallback) {
         isConnected: true,
         newsScore: cfg.baseNews,
         newsTrend: cfg.newsTrend,
+        patientInfo: cfg.patientInfo,
       };
     });
   }
