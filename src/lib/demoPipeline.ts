@@ -1,6 +1,6 @@
 import type {
   CsvWaveformPoint, DetectedBreath, BreathFeatures,
-  LabelMatrixRow, LFVote, PVALabel,
+  LabelMatrixRow, PVALabel,
 } from "@/types/demo";
 
 // ─── CSV Parser ───────────────────────────────────────────────
@@ -169,97 +169,137 @@ export function computeAllFeatures(data: CsvWaveformPoint[], breaths: DetectedBr
   return breaths.map(b => computeFeatures(data, b));
 }
 
-// ─── Model Inference (PyTorch MLP via ONNX) ──────────────────────────────────
+// ─── Snorkel-style Labeling Functions ────────────────────────────────────────
+// Each LF votes for one PVA class or abstains (returns false).
+// Multiple LFs per class give coverage from different angles.
+// Final label = class with most votes; confidence = votes_winner / total_votes.
 
-interface ModelMeta {
-  classes: PVALabel[];
-  feature_cols: string[];
-  scaler_mean: number[];
-  scaler_scale: number[];
+type PVAClass = Exclude<PVALabel, "Normal">;
+
+interface LabelingFunction {
+  name: string;
+  label: PVAClass;
+  fn: (f: BreathFeatures) => boolean;
 }
 
-type OrtSession = Awaited<ReturnType<typeof import("onnxruntime-web").InferenceSession.create>>;
+const LABELING_FUNCTIONS: LabelingFunction[] = [
+  // ── Double Trigger ─────────────────────────────────────────────
+  // Short machine breath + patient immediately triggers another
+  {
+    name: "lf_dt_short_insp_high_ie",
+    label: "double_trigger",
+    fn: (f) => f.iTime < 0.5 && f.ieRatio > 0.7,
+  },
+  {
+    name: "lf_dt_very_short_insp_high_flow",
+    label: "double_trigger",
+    fn: (f) => f.iTime < 0.35 && f.peakFlow > 50,
+  },
 
-let cachedSession: OrtSession | null = null;
-let cachedMeta: ModelMeta | null = null;
+  // ── Flow Starvation ────────────────────────────────────────────
+  // Patient demands more flow than ventilator delivers — flow still high at end of insp
+  {
+    name: "lf_fs_end_flow_ratio",
+    label: "flow_starvation",
+    fn: (f) => f.peakFlow > 0 && (f.flowAtEndInsp / f.peakFlow) > 0.40 && f.iTime > 0.4,
+  },
+  {
+    name: "lf_fs_high_absolute_end_flow",
+    label: "flow_starvation",
+    fn: (f) => f.flowAtEndInsp > 30 && f.iTime > 0.5,
+  },
+  {
+    name: "lf_fs_prolonged_insp_with_flow",
+    label: "flow_starvation",
+    fn: (f) => f.iTime > 0.8 && f.ieRatio > 0.5 && f.flowAtEndInsp > 20,
+  },
 
-async function loadOnnxModel(): Promise<{ session: OrtSession; meta: ModelMeta }> {
-  if (cachedSession && cachedMeta) return { session: cachedSession, meta: cachedMeta };
+  // ── Premature Cycling ──────────────────────────────────────────
+  // Ventilator stops delivering before patient finishes inspiring
+  {
+    name: "lf_pc_short_exp_high_ie",
+    label: "premature_cycling",
+    fn: (f) => f.eTime < 0.8 && f.eTime > 0.1 && f.ieRatio > 0.5,
+  },
+  {
+    name: "lf_pc_very_high_ie_ratio",
+    label: "premature_cycling",
+    fn: (f) => f.ieRatio > 0.8 && f.eTime < 1.0,
+  },
 
-  const [metaRes] = await Promise.all([fetch("/model/pva_model_meta.json")]);
-  cachedMeta = await metaRes.json() as ModelMeta;
+  // ── Ineffective Effort ─────────────────────────────────────────
+  // Patient tries to breathe but ventilator does not trigger
+  {
+    name: "lf_ie_low_vt_with_effort",
+    label: "ineffective_effort",
+    fn: (f) => f.vt < 200 && f.iTime > 0.3,
+  },
+  {
+    name: "lf_ie_very_low_vt",
+    label: "ineffective_effort",
+    fn: (f) => f.vt < 100,
+  },
+];
 
-  const { InferenceSession, env } = await import("onnxruntime-web");
-  env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/";
-  cachedSession = await InferenceSession.create("/model/pva_classifier.onnx", { executionProviders: ["wasm"] });
+function applyLabelingFunctions(f: BreathFeatures): {
+  label: PVALabel;
+  confidence: number;
+  fired: Partial<Record<PVAClass, boolean>>;
+} {
+  const counts: Partial<Record<PVAClass, number>> = {};
+  const fired: Partial<Record<PVAClass, boolean>> = {};
 
-  return { session: cachedSession, meta: cachedMeta };
+  for (const lf of LABELING_FUNCTIONS) {
+    if (lf.fn(f)) {
+      counts[lf.label] = (counts[lf.label] ?? 0) + 1;
+      fired[lf.label] = true;
+    }
+  }
+
+  const totalVotes = (Object.values(counts) as number[]).reduce((a, b) => a + b, 0);
+
+  if (totalVotes === 0) {
+    return { label: "Normal", confidence: 1.0, fired: {} };
+  }
+
+  // Tie-break by clinical priority
+  const priority: PVAClass[] = ["double_trigger", "flow_starvation", "premature_cycling", "ineffective_effort"];
+  let winner: PVALabel = "Normal";
+  let maxCount = 0;
+
+  for (const cls of priority) {
+    const count = counts[cls] ?? 0;
+    if (count > maxCount) { maxCount = count; winner = cls; }
+  }
+
+  return { label: winner, confidence: +(maxCount / totalVotes).toFixed(3), fired };
 }
 
-function featuresToArray(f: BreathFeatures): number[] {
-  return [f.pip, f.peep, f.vt, f.drivingPressure, f.iTime, f.eTime, f.ieRatio, f.peakFlow, f.flowAtEndInsp];
-}
-
-function softmax(logits: number[]): number[] {
-  const max = Math.max(...logits);
-  const exps = logits.map(x => Math.exp(x - max));
-  const sum = exps.reduce((a, b) => a + b, 0);
-  return exps.map(x => x / sum);
-}
-
-export async function classifyBreaths(
+export function classifyBreaths(
   _data: CsvWaveformPoint[],
   breaths: DetectedBreath[],
   features: BreathFeatures[],
-): Promise<LabelMatrixRow[]> {
-  const { session, meta } = await loadOnnxModel();
-  const { Tensor } = await import("onnxruntime-web");
-
-  const results: LabelMatrixRow[] = [];
-
-  for (let i = 0; i < breaths.length; i++) {
-    const raw = featuresToArray(features[i]);
-
-    // Apply same StandardScaler as training
-    const scaled = raw.map((v, j) => (v - meta.scaler_mean[j]) / meta.scaler_scale[j]);
-
-    const inputTensor = new Tensor("float32", new Float32Array(scaled), [1, scaled.length]);
-    const output = await session.run({ features: inputTensor });
-    const logits = Array.from(output["logits"].data as Float32Array);
-    const probs = softmax(logits);
-
-    const classIdx = probs.indexOf(Math.max(...probs));
-    const label = meta.classes[classIdx] ?? "Normal";
-    const confidence = probs[classIdx];
-
-    const dt: LFVote = label === "double_trigger"     ? 1 : 0;
-    const ie: LFVote = label === "ineffective_effort" ? 1 : 0;
-    const fs: LFVote = label === "flow_starvation"    ? 1 : 0;
-    const pc: LFVote = label === "premature_cycling"  ? 1 : 0;
-
-    results.push({
-      breathIdx: breaths[i].idx,
-      lf_double_trigger: dt, lf_ineffective_effort: ie,
-      lf_flow_starvation: fs, lf_premature_cycling: pc,
-      finalLabel: label as PVALabel,
-      confidence: +confidence.toFixed(3),
-    });
-  }
-
-  return results;
+): LabelMatrixRow[] {
+  return features.map((f, i) => {
+    const { label, confidence, fired } = applyLabelingFunctions(f);
+    return {
+      breathIdx:             breaths[i].idx,
+      lf_double_trigger:     fired["double_trigger"]     ? 1 : 0,
+      lf_ineffective_effort: fired["ineffective_effort"] ? 1 : 0,
+      lf_flow_starvation:    fired["flow_starvation"]    ? 1 : 0,
+      lf_premature_cycling:  fired["premature_cycling"]  ? 1 : 0,
+      finalLabel:            label,
+      confidence,
+    };
+  });
 }
 
-// sync stub — model is async-only; kept for type compatibility
 export function runSnorkel(
-  _data: CsvWaveformPoint[],
+  data: CsvWaveformPoint[],
   breaths: DetectedBreath[],
-  _features: BreathFeatures[],
+  features: BreathFeatures[],
 ): LabelMatrixRow[] {
-  return breaths.map(b => ({
-    breathIdx: b.idx, lf_double_trigger: 0, lf_ineffective_effort: 0,
-    lf_flow_starvation: 0, lf_premature_cycling: 0,
-    finalLabel: "Normal" as PVALabel, confidence: 0,
-  }));
+  return classifyBreaths(data, breaths, features);
 }
 
 // ─── Sample CSV Generator ─────────────────────────────────────
