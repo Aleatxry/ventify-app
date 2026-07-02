@@ -39,6 +39,9 @@ export interface LabelMatrixRow {
   lf_premature_cycling: LFVote;
   finalLabel: PVALabel;
   confidence: number;
+  classProbabilities: Record<PVALabel, number>;
+  firedLFs: string[];
+  isUncertain: boolean;
 }
 
 export type PipelineStep = "upload" | "raw" | "layer1" | "layer2" | "snorkel" | "result";

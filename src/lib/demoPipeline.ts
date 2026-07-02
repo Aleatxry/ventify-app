@@ -245,22 +245,40 @@ function applyLabelingFunctions(f: BreathFeatures): {
   label: PVALabel;
   confidence: number;
   fired: Partial<Record<PVAClass, boolean>>;
+  firedLFs: string[];
+  classProbabilities: Record<PVALabel, number>;
+  isUncertain: boolean;
 } {
   const counts: Partial<Record<PVAClass, number>> = {};
   const fired: Partial<Record<PVAClass, boolean>> = {};
+  const firedLFs: string[] = [];
 
   for (const lf of LABELING_FUNCTIONS) {
     if (lf.fn(f)) {
       counts[lf.label] = (counts[lf.label] ?? 0) + 1;
       fired[lf.label] = true;
+      firedLFs.push(lf.name);
     }
   }
 
   const totalVotes = (Object.values(counts) as number[]).reduce((a, b) => a + b, 0);
 
+  const classProbabilities: Record<PVALabel, number> = {
+    Normal: 0, double_trigger: 0, flow_starvation: 0,
+    premature_cycling: 0, ineffective_effort: 0,
+  };
+
   if (totalVotes === 0) {
-    return { label: "Normal", confidence: 1.0, fired: {} };
+    classProbabilities.Normal = 1.0;
+    return { label: "Normal", confidence: 1.0, fired: {}, firedLFs: [], classProbabilities, isUncertain: false };
   }
+
+  for (const [cls, count] of Object.entries(counts) as [PVAClass, number][]) {
+    classProbabilities[cls] = +(count / totalVotes).toFixed(3);
+  }
+
+  const classesWithVotes = Object.keys(counts).length;
+  const isUncertain = classesWithVotes > 1;
 
   // Tie-break by clinical priority
   const priority: PVAClass[] = ["double_trigger", "flow_starvation", "premature_cycling", "ineffective_effort"];
@@ -272,7 +290,11 @@ function applyLabelingFunctions(f: BreathFeatures): {
     if (count > maxCount) { maxCount = count; winner = cls; }
   }
 
-  return { label: winner, confidence: +(maxCount / totalVotes).toFixed(3), fired };
+  return {
+    label: winner,
+    confidence: +(maxCount / totalVotes).toFixed(3),
+    fired, firedLFs, classProbabilities, isUncertain,
+  };
 }
 
 export function classifyBreaths(
@@ -281,7 +303,7 @@ export function classifyBreaths(
   features: BreathFeatures[],
 ): LabelMatrixRow[] {
   return features.map((f, i) => {
-    const { label, confidence, fired } = applyLabelingFunctions(f);
+    const { label, confidence, fired, firedLFs, classProbabilities, isUncertain } = applyLabelingFunctions(f);
     return {
       breathIdx:             breaths[i].idx,
       lf_double_trigger:     fired["double_trigger"]     ? 1 : 0,
@@ -290,6 +312,9 @@ export function classifyBreaths(
       lf_premature_cycling:  fired["premature_cycling"]  ? 1 : 0,
       finalLabel:            label,
       confidence,
+      classProbabilities,
+      firedLFs,
+      isUncertain,
     };
   });
 }
