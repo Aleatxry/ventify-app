@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import Header from "@/components/Header";
-import PipelineNav from "@/components/demo/PipelineNav";
+import PipelineNav, { STEP_ORDER } from "@/components/demo/PipelineNav";
 import UploadZone from "@/components/demo/UploadZone";
 import RawSection from "@/components/demo/RawSection";
 import Layer1Section from "@/components/demo/Layer1Section";
@@ -19,6 +19,8 @@ import type {
 
 export default function DemoPage() {
   const [step,        setStep]        = useState<PipelineStep>("upload");
+  const [maxStep,     setMaxStep]     = useState<PipelineStep>("upload");
+  const [slideDir,    setSlideDir]    = useState<"left" | "right">("left");
   const [processing,  setProcessing]  = useState(false);
   const [csvData,     setCsvData]     = useState<CsvWaveformPoint[] | null>(null);
   const [csvMeta,     setCsvMeta]     = useState<{ hz: number; hasTime: boolean; columns: string[] } | null>(null);
@@ -27,6 +29,11 @@ export default function DemoPage() {
   const [labelMatrix, setLabelMatrix] = useState<LabelMatrixRow[] | null>(null);
   const [parseError,  setParseError]  = useState<string | null>(null);
 
+  const navigate = useCallback((target: PipelineStep) => {
+    setSlideDir(STEP_ORDER[target] > STEP_ORDER[step] ? "left" : "right");
+    setStep(target);
+  }, [step]);
+
   const handleUpload = useCallback(async (file: File) => {
     setParseError(null);
     try {
@@ -34,7 +41,9 @@ export default function DemoPage() {
       const result = parseCSV(text);
       setCsvData(result.data);
       setCsvMeta({ hz: result.hz, hasTime: result.hasTime, columns: result.detectedColumns });
+      setSlideDir("left");
       setStep("raw");
+      setMaxStep("raw");
     } catch (e) {
       setParseError(e instanceof Error ? e.message : "Parse failed");
     }
@@ -42,29 +51,33 @@ export default function DemoPage() {
 
   const advance = useCallback(async (from: PipelineStep) => {
     setProcessing(true);
-    await new Promise(r => setTimeout(r, 800));
+    await new Promise(r => setTimeout(r, 600));
+
+    let next: PipelineStep = from;
 
     if (from === "raw" && csvData) {
-      const b = segmentBreaths(csvData);
-      setBreaths(b);
-      setStep("layer1");
+      if (!breaths) setBreaths(segmentBreaths(csvData));
+      next = "layer1";
     } else if (from === "layer1" && csvData && breaths) {
-      const f = computeAllFeatures(csvData, breaths);
-      setFeatures(f);
-      setStep("layer2");
+      if (!features) setFeatures(computeAllFeatures(csvData, breaths));
+      next = "layer2";
     } else if (from === "layer2" && csvData && breaths && features) {
-      const m = await classifyBreaths(csvData, breaths, features);
-      setLabelMatrix(m);
-      setStep("snorkel");
+      if (!labelMatrix) setLabelMatrix(classifyBreaths(csvData, breaths, features));
+      next = "snorkel";
     } else if (from === "snorkel") {
-      setStep("result");
+      next = "result";
     }
 
+    setSlideDir("left");
+    setStep(next);
+    if (STEP_ORDER[next] > STEP_ORDER[maxStep]) setMaxStep(next);
     setProcessing(false);
-  }, [csvData, breaths, features]);
+  }, [csvData, breaths, features, labelMatrix, maxStep]);
 
   const reset = useCallback(() => {
     setStep("upload");
+    setMaxStep("upload");
+    setSlideDir("left");
     setCsvData(null);
     setBreaths(null);
     setFeatures(null);
@@ -73,12 +86,13 @@ export default function DemoPage() {
     setProcessing(false);
   }, []);
 
+  const slideClass = slideDir === "left" ? "animate-slide-from-right" : "animate-slide-from-left";
+
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "var(--v-bg)" }}>
       <Header showBack roomLabel="Pipeline Demo — PVA Classification" isConnected={false} />
 
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "40px 24px" }}>
-        {/* Page heading */}
         <div style={{ marginBottom: 36 }}>
           <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--v-text-1)", marginBottom: 6 }}>
             PVA Detection Pipeline
@@ -88,55 +102,54 @@ export default function DemoPage() {
           </p>
         </div>
 
-        {/* Step indicator */}
         <div style={{ marginBottom: 40, overflowX: "auto", paddingBottom: 4 }}>
-          <PipelineNav step={step} />
+          <PipelineNav step={step} maxStep={maxStep} onStepClick={navigate} />
         </div>
 
-        {/* Sections */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+        {/* Slide content — key forces remount + animation on step change */}
+        <div key={step} className={slideClass}>
           {step === "upload" && (
             <>
               <UploadZone onUpload={handleUpload} />
               {parseError && (
-                <div style={{ padding: "12px 16px", borderRadius: 12, background: "var(--v-critical-pale)", border: "1px solid var(--v-critical)" }}>
+                <div style={{ marginTop: 16, padding: "12px 16px", borderRadius: 12, background: "var(--v-critical-pale)", border: "1px solid var(--v-critical)" }}>
                   <p style={{ fontSize: 13, color: "var(--v-critical)", fontWeight: 500 }}>{parseError}</p>
                 </div>
               )}
             </>
           )}
 
-          {step !== "upload" && csvData && (
+          {step === "raw" && csvData && (
             <RawSection
               data={csvData}
               meta={csvMeta}
               onNext={() => advance("raw")}
-              processing={processing && step === "raw"}
+              processing={processing}
             />
           )}
 
-          {(step === "layer1" || step === "layer2" || step === "snorkel" || step === "result") && csvData && breaths && (
+          {step === "layer1" && csvData && breaths && (
             <Layer1Section
               data={csvData}
               breaths={breaths}
               onNext={() => advance("layer1")}
-              processing={processing && step === "layer1"}
+              processing={processing}
             />
           )}
 
-          {(step === "layer2" || step === "snorkel" || step === "result") && features && (
+          {step === "layer2" && features && (
             <Layer2Section
               features={features}
               onNext={() => advance("layer2")}
-              processing={processing && step === "layer2"}
+              processing={processing}
             />
           )}
 
-          {(step === "snorkel" || step === "result") && labelMatrix && (
+          {step === "snorkel" && labelMatrix && (
             <SnorkelSection
               matrix={labelMatrix}
               onNext={() => advance("snorkel")}
-              processing={processing && step === "snorkel"}
+              processing={processing}
             />
           )}
 

@@ -75,6 +75,16 @@
   to   { transform: translateY(0);   opacity: 1; }
 }
 
+@keyframes slide-from-right {
+  from { transform: translateX(48px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+@keyframes slide-from-left {
+  from { transform: translateX(-48px); opacity: 0; }
+  to   { transform: translateX(0);     opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration:  0.01ms !important;
@@ -122,7 +132,9 @@ body {
   box-shadow:   var(--v-shadow-card);
 }
 
-.animate-pulse-badge { animation: pulse-badge   1.8s ease-in-out infinite; }
-.animate-slide-in    { animation: slide-in-left 0.22s cubic-bezier(0.4,0,0.2,1) forwards; }
-.animate-live-dot    { animation: live-dot      2s   ease-in-out infinite; }
-.animate-fade-up     { animation: fade-up       0.28s cubic-bezier(0.4,0,0.2,1) forwards; }
+.animate-pulse-badge      { animation: pulse-badge      1.8s ease-in-out infinite; }
+.animate-slide-in         { animation: slide-in-left    0.22s cubic-bezier(0.4,0,0.2,1) forwards; }
+.animate-live-dot         { animation: live-dot         2s   ease-in-out infinite; }
+.animate-fade-up          { animation: fade-up          0.28s cubic-bezier(0.4,0,0.2,1) forwards; }
+.animate-slide-from-right { animation: slide-from-right 0.28s cubic-bezier(0.4,0,0.2,1) forwards; }
+.animate-slide-from-left  { animation: slide-from-left  0.28s cubic-bezier(0.4,0,0.2,1) forwards; }
