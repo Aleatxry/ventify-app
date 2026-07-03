@@ -3,12 +3,16 @@
 import { use, useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import Header from "@/components/Header";
-import InstabilityCard from "@/components/InstabilityCard";
 import AlertHistory from "@/components/AlertHistory";
 import PVASummaryCard from "@/components/PVASummaryCard";
 import BreathMetricsCard from "@/components/BreathMetricsCard";
 import EmptyState from "@/components/EmptyState";
+import PatientTsneCard from "@/components/PatientTsneCard";
+import PatientInfoCard from "@/components/PatientInfoCard";
 import { loadRealCaptures, type RealBedHistory } from "@/lib/realDataLoader";
+import { loadPatientTsne, type PatientTsneEntry } from "@/lib/tsneLoader";
+import { loadPatientMetadata, toPatientInfo } from "@/lib/patientMetadataLoader";
+import type { PatientInfo } from "@/types/ventify";
 
 const PVABrowser = dynamic(() => import("@/components/PVABrowser"), { ssr: false });
 
@@ -16,12 +20,21 @@ export default function PatientPage({ params }: { params: Promise<{ bedId: strin
   const { bedId } = use(params);
   const [history,   setHistory  ] = useState<RealBedHistory | null>(null);
   const [loading,   setLoading  ] = useState(true);
+  const [tsne,      setTsne     ] = useState<PatientTsneEntry | null>(null);
+  const [info,      setInfo     ] = useState<PatientInfo | null>(null);
 
   useEffect(() => {
     setLoading(true);
     loadRealCaptures(bedId).then(real => {
       setHistory(real);
       setLoading(false);
+      if (real) {
+        loadPatientTsne(real.patientHash).then(setTsne);
+        loadPatientMetadata().then(meta => {
+          const entry = meta?.[real.patientHash];
+          setInfo(entry ? toPatientInfo(entry) : null);
+        });
+      }
     });
   }, [bedId]);
 
@@ -30,7 +43,7 @@ export default function PatientPage({ params }: { params: Promise<{ bedId: strin
       <Header
         showBack
         isConnected={!loading && history !== null}
-        patientLabel={history ? `Bed ${bedId} — ${bedId === "01" ? "2A7B9F18" : "BD496321"}` : `Bed ${bedId}`}
+        patientLabel={history ? `Bed ${bedId} — ${history.patientHash.slice(0, 8).toUpperCase()}` : `Bed ${bedId}`}
       />
 
       <main className="max-w-[1400px] mx-auto px-6 py-8">
@@ -52,12 +65,10 @@ export default function PatientPage({ params }: { params: Promise<{ bedId: strin
 
             {/* RIGHT: sidebar — real data only */}
             <div className="flex flex-col gap-4">
-              <InstabilityCard
-                instabilityClass={history.instabilityClass}
-                viiTrend={history.viiTrend}
-              />
-              <BreathMetricsCard captures={history.captures} />
+              {info && <PatientInfoCard info={info} />}
               <PVASummaryCard captures={history.captures} />
+              <BreathMetricsCard captures={history.captures} />
+              <PatientTsneCard data={tsne} />
             </div>
           </div>
         )}

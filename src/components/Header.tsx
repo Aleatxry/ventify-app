@@ -1,8 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import LungIcon from "./LungIcon";
-import ThemeToggle from "./ThemeToggle";
 
 interface HeaderProps {
   roomLabel?: string;
@@ -10,18 +8,26 @@ interface HeaderProps {
   lastUpdated?: Date | null;
   showBack?: boolean;
   patientLabel?: string;
+  criticalCount?: number;
+  elevatedCount?: number;
+  normalCount?: number;
 }
 
 export default function Header({
-  roomLabel = "ICU Ward — MICU2",
+  roomLabel = "ICU · MICU2",
   isConnected = true,
   lastUpdated = null,
   showBack = false,
   patientLabel,
+  criticalCount,
+  elevatedCount,
+  normalCount,
 }: HeaderProps) {
   const timeStr = lastUpdated
     ? lastUpdated.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
     : null;
+
+  const showCounts = criticalCount !== undefined || elevatedCount !== undefined || normalCount !== undefined;
 
   return (
     <header
@@ -31,76 +37,78 @@ export default function Header({
         backdropFilter: "blur(20px) saturate(180%)",
         WebkitBackdropFilter: "blur(20px) saturate(180%)",
         borderBottom: "1px solid var(--v-header-border)",
-        transition: "background 250ms ease, border-color 250ms ease",
       }}
     >
-      {/* Ambient waveform trace */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
-        <svg
-          className="absolute bottom-0 left-0 w-full"
-          height="60"
-          viewBox="0 0 1440 60"
-          preserveAspectRatio="none"
-          style={{ opacity: 0.045 }}
-        >
-          <path
-            d="M0 30 C60 30,80 10,120 10 C160 10,170 50,210 50 C250 50,260 30,300 30
-               C340 30,360 10,400 10 C440 10,450 50,490 50 C530 50,540 30,580 30
-               C620 30,640 10,680 10 C720 10,730 50,770 50 C810 50,820 30,860 30
-               C900 30,920 10,960 10 C1000 10,1010 50,1050 50 C1090 50,1100 30,1140 30
-               C1180 30,1200 10,1240 10 C1280 10,1290 50,1330 50 C1370 50,1390 30,1440 30"
-            stroke="var(--v-accent)"
-            strokeWidth="2"
-            fill="none"
-          />
-        </svg>
-      </div>
-
-      <div className="relative flex items-center justify-between h-[60px] px-6 max-w-[1600px] mx-auto">
+      <div className="relative flex items-center justify-between px-5 mx-auto" style={{ height: 38, maxWidth: 1920 }}>
         {/* Left */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           {showBack && (
             <Link
               href="/"
-              className="flex items-center gap-1 text-sm font-medium mr-2"
-              style={{ color: "var(--v-accent)" }}
+              className="flex items-center gap-1 font-medium mr-1"
+              style={{ fontSize: 13, color: "var(--v-accent)" }}
             >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                 <path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
               Ward
             </Link>
           )}
-          <LungIcon size={28} />
-          <span className="text-[18px] font-bold tracking-[-0.3px]" style={{ color: "var(--v-text-1)" }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/ventify-logo.png"
+            alt="Ventify"
+            width={28}
+            height={24}
+            style={{ objectFit: "contain", display: "block" }}
+          />
+          <span className="font-bold tracking-tight" style={{ fontSize: 15, color: "var(--v-text-1)" }}>
             Ventify
+          </span>
+          <span style={{ fontSize: 12, color: "var(--v-divider)", marginLeft: 2 }}>·</span>
+          <span style={{ fontSize: 13, color: "var(--v-text-2)", fontWeight: 500 }}>
+            {patientLabel ?? roomLabel}
           </span>
         </div>
 
-        {/* Center */}
-        <div className="absolute left-1/2 -translate-x-1/2 text-center">
-          <p className="text-[13px] font-semibold" style={{ color: "var(--v-text-1)" }}>
-            {patientLabel ?? roomLabel}
-          </p>
-        </div>
+        {/* Center — severity counts (ward page only) */}
+        {showCounts && (
+          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-4">
+            {!!criticalCount && (
+              <span className="flex items-center gap-1.5 font-bold tabular-nums" style={{ fontSize: 13, color: "var(--v-critical)" }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "var(--v-critical)", display: "inline-block" }} />
+                {criticalCount} Critical
+              </span>
+            )}
+            {!!elevatedCount && (
+              <span className="flex items-center gap-1.5 font-bold tabular-nums" style={{ fontSize: 13, color: "var(--v-elevated)" }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "var(--v-elevated)", display: "inline-block" }} />
+                {elevatedCount} Elevated
+              </span>
+            )}
+            {normalCount !== undefined && normalCount > 0 && (
+              <span className="flex items-center gap-1.5 font-semibold tabular-nums" style={{ fontSize: 13, color: "var(--v-normal)" }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "var(--v-normal)", display: "inline-block" }} />
+                {normalCount} Stable
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Right */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <span
-              className="inline-block w-2 h-2 rounded-full animate-live-dot"
-              style={{ backgroundColor: isConnected ? "var(--v-normal)" : "var(--v-critical)" }}
-            />
-            <span className="text-[12px] font-medium" style={{ color: "var(--v-text-2)" }}>
-              {isConnected ? "Live" : "Disconnected"}
-            </span>
-          </div>
+          <span
+            className="inline-block w-2 h-2 rounded-full animate-live-dot"
+            style={{ backgroundColor: isConnected ? "var(--v-normal)" : "var(--v-critical)" }}
+          />
+          <span style={{ fontSize: 12, fontWeight: 500, color: "var(--v-text-2)" }}>
+            {isConnected ? "Live" : "Offline"}
+          </span>
           {timeStr && (
-            <span className="text-[11px] font-mono-nums" style={{ color: "var(--v-text-3)" }}>
+            <span className="font-mono-nums" style={{ fontSize: 13, color: "var(--v-text-1)", fontWeight: 600 }}>
               {timeStr}
             </span>
           )}
-          <ThemeToggle />
         </div>
       </div>
     </header>

@@ -8,6 +8,20 @@ export const SEVERITY_COLORS: Record<Severity, {
   Critical: { bg: "#FF3B30", text: "#FFFFFF", pale: "rgba(255,59,48,0.10)",   dot: "#FF3B30" },
 };
 
+// Per-type clinical severity, independent of any one patient's averaged
+// instability -- a flow_starvation/air_trapping breath is inherently more
+// urgent than an ineffective_effort one, regardless of how it averages out
+// over that patient's whole ICU stay. Single source of truth: was previously
+// duplicated in realDataLoader.ts and mockHistory.ts.
+export const FLAG_SEVERITY: Record<string, Severity> = {
+  flow_starvation:     "Critical",
+  air_trapping:        "Critical",
+  double_trigger:      "Elevated",
+  ineffective_effort:  "Elevated",
+  early_termination:   "Elevated",
+  delayed_termination: "Elevated",
+};
+
 export const PVA_LABELS: Record<string, string> = {
   double_trigger:      "Double Trigger",
   ineffective_effort:  "Ineffective Effort",
@@ -37,9 +51,16 @@ export const WAVEFORM_COLORS = {
 
 export const WAVEFORM_WINDOW_S = 30;
 
+// Thresholds calibrated against the real pipeline's patient-level mean
+// instability (out_real/patient_rollup.json across all 78 real patients:
+// range 1.8-28.5%, nobody crosses 30) -- the original 60/30 cutoffs meant
+// every real patient always landed Normal regardless of who was shown,
+// since patient-level mean instability is an average over their whole ICU
+// stay and dilutes any single hot window. 25/12 puts the real distribution's
+// actual top few percent into Critical/Elevated instead.
 export function getSeverityFromInstability(value: number): Severity {
-  if (value >= 60) return "Critical";
-  if (value >= 30) return "Elevated";
+  if (value >= 25) return "Critical";
+  if (value >= 12) return "Elevated";
   return "Normal";
 }
 

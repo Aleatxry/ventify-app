@@ -39,3 +39,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Real (and real-shaped) patient-derived data from the Python pipeline.
+# Public site policy is sample/synthetic-only -- these files are dev-time
+# artifacts for wiring up the real-data view locally, never meant to be
+# committed. Mirrors BDI_ventify-main's out_real/ (gitignored, no carve-out).
+/public/data/patient_rollup.json
+/public/data/cluster_breaths.json
+/public/data/patient_tsne.json
+/public/data/patient_metadata.json
+/public/data/waveforms/

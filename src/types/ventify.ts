@@ -93,11 +93,14 @@ export interface BedData {
   fluidBalance: FluidBalance | null;
   isConnected: boolean;
   newsScore: number;
-  newsTrend: "up" | "down" | "stable";
   patientInfo: PatientInfo | null;
   lastEventAt?: Date;
   // Real data fields from patient_rollup.json
   captureCount?: number;
   totalBreaths?: number;
   pvaBreathFrac?: number;
+  // Demographic/diagnosis risk factor (age >=75 or a lung-injury diagnosis)
+  // -- see patientMetadataLoader.isHighRisk. Independent of instabilityIndex,
+  // which is PVA-derived; this is purely based on who the patient is.
+  highRisk?: boolean;
 }

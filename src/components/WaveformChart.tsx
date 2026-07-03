@@ -28,7 +28,7 @@ function prepareData(buffer: WaveformPoint[]): ChartRow[] {
       flow: p.flow,
       volume: p.volume,
     }))
-    .filter(p => p.t >= -30 && p.t <= 0)
+    .filter(p => p.t >= -10 && p.t <= 0)
     .sort((a, b) => a.t - b.t);
 }
 
@@ -37,7 +37,7 @@ function timeFormatter(v: number) {
   return `${Math.abs(v).toFixed(0)}s`;
 }
 
-const xDomain: [number, number] = [-30, 0];
+const xDomain: [number, number] = [-10, 0];
 
 interface MiniChartProps {
   data: ChartRow[];
@@ -145,7 +145,7 @@ export default function WaveformChart({ buffer, alerts }: WaveformChartProps) {
       x2: parseFloat((a.timestamp_s - now).toFixed(2)),
       severity: a.severity,
     }))
-    .filter(b => b.x2 >= -30);
+    .filter(b => b.x2 >= -10);
 
   return (
     <div
@@ -161,7 +161,7 @@ export default function WaveformChart({ buffer, alerts }: WaveformChartProps) {
           Real-time Waveform
         </span>
         <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.35)" }}>
-          Last 30 seconds
+          Last 4 breaths
         </span>
       </div>
 

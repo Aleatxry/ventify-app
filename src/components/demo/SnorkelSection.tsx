@@ -13,8 +13,10 @@ const CLASS_CONFIG: Record<PVALabel, { color: string; bg: string; short: string 
   Normal:              { color: "var(--v-normal)",   bg: "var(--v-normal-pale)",   short: "Normal" },
   flow_starvation:     { color: "var(--v-critical)", bg: "var(--v-critical-pale)", short: "Flow Starv." },
   double_trigger:      { color: "#e07d10",            bg: "#fff7ed",                short: "Double Trig." },
-  premature_cycling:   { color: "#7c3aed",            bg: "#f5f3ff",                short: "Premature Cyc." },
+  early_termination:   { color: "#7c3aed",            bg: "#f5f3ff",                short: "Early Term." },
   ineffective_effort:  { color: "#0369a1",            bg: "#f0f9ff",                short: "Ineffective Eff." },
+  delayed_termination: { color: "#b45309",            bg: "#fffbeb",                short: "Delayed Term." },
+  air_trapping:        { color: "#6b21a8",            bg: "#faf5ff",                short: "Air Trapping" },
 };
 
 const LF_LABELS: Record<string, string> = {
@@ -23,14 +25,18 @@ const LF_LABELS: Record<string, string> = {
   lf_fs_end_flow_ratio:             "flowEnd/peak > 40% และ iTime > 0.4s",
   lf_fs_high_absolute_end_flow:     "flowEnd > 30 L/min และ iTime > 0.5s",
   lf_fs_prolonged_insp_with_flow:   "iTime > 0.8s และ flowEnd > 20",
-  lf_pc_short_exp_high_ie:          "eTime < 0.8s และ IE > 0.5",
-  lf_pc_very_high_ie_ratio:         "IE > 0.8 และ eTime < 1.0s",
+  lf_et_short_exp_high_ie:          "eTime < 0.8s และ IE > 0.5",
+  lf_et_very_high_ie_ratio:         "IE > 0.8 และ eTime < 1.0s",
+  lf_dtm_prolonged_itime:           "iTime > 0.9s และ IE > 0.75",
+  lf_dtm_high_dp_long_insp:         "DP > 14 cmH₂O, iTime > 0.8s, eTime < 0.7s",
+  lf_at_short_etime_high_vt:        "eTime < 0.65s และ VT > 320 mL",
+  lf_at_very_short_etime:           "eTime < 0.50s และ VT > 180 mL",
   lf_ie_low_vt_with_effort:         "VT < 200 mL และ iTime > 0.3s",
   lf_ie_very_low_vt:                "VT < 100 mL",
 };
 
 const CLASS_ORDER: PVALabel[] = [
-  "flow_starvation", "double_trigger", "premature_cycling", "ineffective_effort", "Normal",
+  "flow_starvation", "double_trigger", "early_termination", "ineffective_effort", "delayed_termination", "air_trapping", "Normal",
 ];
 
 function ProbBar({ label, prob }: { label: PVALabel; prob: number }) {

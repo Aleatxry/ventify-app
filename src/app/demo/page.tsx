@@ -8,13 +8,14 @@ import RawSection from "@/components/demo/RawSection";
 import Layer1Section from "@/components/demo/Layer1Section";
 import Layer2Section from "@/components/demo/Layer2Section";
 import SnorkelSection from "@/components/demo/SnorkelSection";
+import HLASection from "@/components/demo/HLASection";
 import ResultSection from "@/components/demo/ResultSection";
 import {
-  parseCSV, segmentBreaths, computeAllFeatures, classifyBreaths,
+  parseCSV, segmentBreaths, computeAllFeatures, classifyBreaths, computeAllHLA,
 } from "@/lib/demoPipeline";
 import type {
   PipelineStep, CsvWaveformPoint, DetectedBreath,
-  BreathFeatures, LabelMatrixRow,
+  BreathFeatures, LabelMatrixRow, HLAResult,
 } from "@/types/demo";
 
 export default function DemoPage() {
@@ -27,6 +28,7 @@ export default function DemoPage() {
   const [breaths,     setBreaths]     = useState<DetectedBreath[] | null>(null);
   const [features,    setFeatures]    = useState<BreathFeatures[] | null>(null);
   const [labelMatrix, setLabelMatrix] = useState<LabelMatrixRow[] | null>(null);
+  const [hlaResults,  setHlaResults]  = useState<HLAResult[] | null>(null);
   const [parseError,  setParseError]  = useState<string | null>(null);
 
   const navigate = useCallback((target: PipelineStep) => {
@@ -64,7 +66,10 @@ export default function DemoPage() {
     } else if (from === "layer2" && csvData && breaths && features) {
       if (!labelMatrix) setLabelMatrix(classifyBreaths(csvData, breaths, features));
       next = "snorkel";
-    } else if (from === "snorkel") {
+    } else if (from === "snorkel" && csvData && breaths) {
+      if (!hlaResults) setHlaResults(computeAllHLA(csvData, breaths));
+      next = "hla";
+    } else if (from === "hla") {
       next = "result";
     }
 
@@ -72,7 +77,7 @@ export default function DemoPage() {
     setStep(next);
     if (STEP_ORDER[next] > STEP_ORDER[maxStep]) setMaxStep(next);
     setProcessing(false);
-  }, [csvData, breaths, features, labelMatrix, maxStep]);
+  }, [csvData, breaths, features, labelMatrix, hlaResults, maxStep]);
 
   const reset = useCallback(() => {
     setStep("upload");
@@ -82,6 +87,7 @@ export default function DemoPage() {
     setBreaths(null);
     setFeatures(null);
     setLabelMatrix(null);
+    setHlaResults(null);
     setParseError(null);
     setProcessing(false);
   }, []);
@@ -98,7 +104,7 @@ export default function DemoPage() {
             PVA Detection Pipeline
           </h1>
           <p style={{ fontSize: 14, color: "var(--v-text-2)", lineHeight: 1.6 }}>
-            Upload a ventilator waveform CSV and watch the full pipeline — segmentation, feature extraction, Snorkel labeling, classification.
+            Upload a ventilator waveform CSV and watch the full pipeline — segmentation, feature extraction, Snorkel labeling, HLA loop-geometry cross-check, classification.
           </p>
         </div>
 
@@ -149,6 +155,15 @@ export default function DemoPage() {
             <SnorkelSection
               matrix={labelMatrix}
               onNext={() => advance("snorkel")}
+              processing={processing}
+            />
+          )}
+
+          {step === "hla" && hlaResults && labelMatrix && (
+            <HLASection
+              results={hlaResults}
+              snorkelMatrix={labelMatrix}
+              onNext={() => advance("hla")}
               processing={processing}
             />
           )}

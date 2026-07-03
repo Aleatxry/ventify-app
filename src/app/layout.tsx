@@ -14,10 +14,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Prevent flash of wrong theme */}
         <script dangerouslySetInnerHTML={{ __html: `
           try {
-            var t = localStorage.getItem('ventify-theme');
-            var p = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-            document.documentElement.setAttribute('data-theme', t || p);
-          } catch(e) {}
+            var t = localStorage.getItem('ventify-theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', t);
+          } catch(e) { document.documentElement.setAttribute('data-theme', 'dark'); }
         `}} />
       </head>
       <body>

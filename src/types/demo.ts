@@ -29,14 +29,16 @@ export interface BreathFeatures {
 }
 
 export type LFVote = 1 | 0;
-export type PVALabel = "Normal" | "double_trigger" | "ineffective_effort" | "flow_starvation" | "premature_cycling";
+export type PVALabel = "Normal" | "double_trigger" | "ineffective_effort" | "flow_starvation" | "early_termination" | "delayed_termination" | "air_trapping";
 
 export interface LabelMatrixRow {
   breathIdx: number;
   lf_double_trigger: LFVote;
   lf_ineffective_effort: LFVote;
   lf_flow_starvation: LFVote;
-  lf_premature_cycling: LFVote;
+  lf_early_termination: LFVote;
+  lf_delayed_termination: LFVote;
+  lf_air_trapping: LFVote;
   finalLabel: PVALabel;
   confidence: number;
   classProbabilities: Record<PVALabel, number>;
@@ -44,4 +46,21 @@ export interface LabelMatrixRow {
   isUncertain: boolean;
 }
 
-export type PipelineStep = "upload" | "raw" | "layer1" | "layer2" | "snorkel" | "result";
+export type PipelineStep = "upload" | "raw" | "layer1" | "layer2" | "snorkel" | "hla" | "result";
+
+// HLA (Hysteresis Loop Analysis) — a second, methodologically independent,
+// label-free classifier (Ang et al. 2024). Judges PV-loop geometry rather
+// than time-domain features, so its taxonomy only partially overlaps
+// PVALabel's — see HLA_TO_LF_LABEL in lib/demoPipeline.ts for the mapping.
+export type HLALabel =
+  | "normal" | "flow_asynchrony" | "reverse_triggering" | "premature_cycling"
+  | "double_triggering" | "delayed_cycling" | "ineffective_effort" | "auto_triggering";
+
+export interface HLAResult {
+  breathIdx: number;
+  label: HLALabel;
+  nInsp: number;
+  nExp: number;
+  inspSlopes: number[];
+  expSlopes: number[];
+}

@@ -9,7 +9,7 @@ interface ResultSectionProps {
   onReset: () => void;
 }
 
-const PVA_KEYS = ["double_trigger", "ineffective_effort", "flow_starvation", "premature_cycling"] as const;
+const PVA_KEYS = ["double_trigger", "ineffective_effort", "flow_starvation", "early_termination", "delayed_termination", "air_trapping"] as const;
 
 export default function ResultSection({ matrix, onReset }: ResultSectionProps) {
   const normal = matrix.filter(r => r.finalLabel === "Normal").length;

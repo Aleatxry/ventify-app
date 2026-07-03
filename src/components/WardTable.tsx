@@ -1,8 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import type { BedData } from "@/types/ventify";
-import AlertBadge from "./AlertBadge";
+import type { BedData, Severity } from "@/types/ventify";
 import VentilatorIcon from "./VentilatorIcon";
 import { SEVERITY_COLORS, PVA_SHORT } from "@/lib/constants";
 
@@ -45,6 +44,31 @@ function spo2Color(v: number): string {
   return "var(--v-text-1)";
 }
 
+// Single consolidated risk badge -- replaces the separate PVA-only Alert
+// badge. Tier already combines both signals (see rollupLoader.rollupToBeds):
+// PVA-derived instability, floored to at least Elevated by age>=75 or a
+// lung-injury diagnosis. Critical/Elevated/Normal relabeled as High/Low/
+// Normal risk so the one column reads as overall risk, not just PVA alert.
+const RISK_LABEL: Record<Severity, string> = {
+  Critical: "High Risk",
+  Elevated: "Low Risk",
+  Normal:   "Normal",
+};
+
+function RiskBadge({ tier }: { tier: Severity }) {
+  const c = SEVERITY_COLORS[tier];
+  return (
+    <span style={{
+      fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 99,
+      color: c.bg, background: c.pale,
+      border: `1px solid ${c.bg}50`,
+      whiteSpace: "nowrap",
+    }}>
+      {RISK_LABEL[tier]}
+    </span>
+  );
+}
+
 function PVACell({ latestPrediction, pvaBreathFrac }: {
   latestPrediction: BedData["latestPrediction"];
   pvaBreathFrac?: number;
@@ -67,17 +91,8 @@ function PVACell({ latestPrediction, pvaBreathFrac }: {
   );
 }
 
-function TrendCell({ trend }: { trend: BedData["newsTrend"] }) {
-  const arrow = trend === "up" ? "↑" : trend === "down" ? "↓" : "→";
-  const color =
-    trend === "up"   ? "var(--v-critical)"  :
-    trend === "down" ? "var(--v-normal)"    :
-    "var(--v-text-3)";
-  return <span style={{ fontSize: 20, fontWeight: 700, color }}>{arrow}</span>;
-}
-
-const COLS = "56px 1fr 130px 80px 60px 70px 115px 68px 60px 88px 150px";
-const HEADERS = ["Bed", "Patient", "Alert", "Captures", "Trend", "HR", "BP (MAP)", "SpO₂", "NEWS", "I/O", "Dominant PVA"];
+const COLS = "56px 1fr 100px 80px 70px 115px 68px 60px 88px 150px";
+const HEADERS = ["Bed", "Patient", "Risk", "Captures", "HR", "BP (MAP)", "SpO₂", "NEWS", "I/O", "Dominant PVA"];
 
 export default function WardTable({ beds }: WardTableProps) {
   const router = useRouter();
@@ -147,8 +162,8 @@ export default function WardTable({ beds }: WardTableProps) {
                 </span>
               </div>
 
-              {/* Alert */}
-              <div><AlertBadge severity={severity} pulse size="sm" /></div>
+              {/* Risk — consolidated PVA + demographic signal */}
+              <div><RiskBadge tier={severity} /></div>
 
               {/* Captures */}
               <div className="flex flex-col gap-0">
@@ -158,9 +173,6 @@ export default function WardTable({ beds }: WardTableProps) {
                 </span>
                 <span style={{ fontSize: 10, color: "var(--v-text-3)" }}>captures</span>
               </div>
-
-              {/* Trend */}
-              <TrendCell trend={bed.newsTrend} />
 
               {/* HR — mock */}
               <div className="flex flex-col gap-0">

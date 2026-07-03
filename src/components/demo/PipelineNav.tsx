@@ -8,11 +8,12 @@ const STEPS: { key: PipelineStep; label: string }[] = [
   { key: "layer1",  label: "Layer 1" },
   { key: "layer2",  label: "Layer 2" },
   { key: "snorkel", label: "Snorkel" },
+  { key: "hla",     label: "HLA"     },
   { key: "result",  label: "Result"  },
 ];
 
 export const STEP_ORDER: Record<PipelineStep, number> = {
-  upload: 0, raw: 1, layer1: 2, layer2: 3, snorkel: 4, result: 5,
+  upload: 0, raw: 1, layer1: 2, layer2: 3, snorkel: 4, hla: 5, result: 6,
 };
 
 interface PipelineNavProps {

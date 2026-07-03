@@ -12,13 +12,12 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue>({ theme: "light", toggle: () => {} });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("light");
+  const [theme, setTheme] = useState<Theme>("dark");
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("ventify-theme") as Theme | null;
-    const preferred = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-    const initial = saved ?? preferred;
+    const initial = (saved ?? "dark") as Theme;
     setTheme(initial);
     document.documentElement.setAttribute("data-theme", initial);
     setMounted(true);
@@ -34,7 +33,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <ThemeContext.Provider value={{ theme: mounted ? theme : "light", toggle }}>
+    <ThemeContext.Provider value={{ theme: mounted ? theme : "dark", toggle }}>
       {children}
     </ThemeContext.Provider>
   );

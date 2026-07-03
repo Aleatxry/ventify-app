@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import type { BedData } from "@/types/ventify";
 import { rollupToBeds, type PatientRollup } from "@/lib/rollupLoader";
+import { loadPatientMetadata } from "@/lib/patientMetadataLoader";
 
 export function useWardData() {
   const [beds,        setBeds       ] = useState<BedData[]>([]);
@@ -15,7 +16,8 @@ export function useWardData() {
         const res = await fetch("/data/patient_rollup.json");
         if (!res.ok) throw new Error("not found");
         const rollup: PatientRollup = await res.json();
-        setBeds(rollupToBeds(rollup));
+        const metadata = await loadPatientMetadata();
+        setBeds(rollupToBeds(rollup, metadata));
         setIsLoaded(true);
         setLastUpdated(new Date());
       } catch {

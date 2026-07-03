@@ -65,6 +65,18 @@
   to   { transform: translateX(0);     opacity: 1; }
 }
 
+@keyframes critical-row-pulse {
+  0%, 100% { background-color: rgba(255, 59, 48, 0.11); }
+  50%       { background-color: rgba(255, 59, 48, 0.20); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ward-row[data-severity="critical"] {
+    animation: none !important;
+    background-color: rgba(255, 59, 48, 0.14) !important;
+  }
+}
+
 @keyframes live-dot {
   0%, 100% { opacity: 1;    transform: scale(1); }
   50%       { opacity: 0.3; transform: scale(0.7); }
@@ -117,6 +129,36 @@ body {
   outline:        2px solid var(--v-accent);
   outline-offset: 2px;
   border-radius:  4px;
+}
+
+/* ─── Ventilator icon (JPEG with white bg → CSS-filter to match theme) ── */
+.vent-lung-icon {
+  filter: brightness(0) opacity(0.6);
+}
+[data-theme="dark"] .vent-lung-icon {
+  filter: brightness(0) invert(1) opacity(0.75);
+}
+
+/* ─── Ward table TV rows ─────────────────────────────────────── */
+
+.ward-row[data-severity="critical"] {
+  animation: critical-row-pulse 4s ease-in-out infinite;
+}
+.ward-row[data-severity="critical"]:hover {
+  animation: none;
+  background-color: rgba(255, 59, 48, 0.22);
+}
+.ward-row[data-severity="elevated"] {
+  background-color: rgba(255, 149, 0, 0.10);
+}
+.ward-row[data-severity="elevated"]:hover {
+  background-color: rgba(255, 149, 0, 0.18);
+}
+.ward-row[data-severity="normal"] {
+  background-color: transparent;
+}
+.ward-row[data-severity="normal"]:hover {
+  background-color: var(--v-accent-pale);
 }
 
 /* ─── Utility classes ────────────────────────────────────────── */

@@ -1,5 +1,6 @@
-import type { BedData, PVAFlag, Severity } from "@/types/ventify";
-import { getSeverityFromInstability } from "./constants";
+import type { BedData, PVAFlag } from "@/types/ventify";
+import { getSeverityFromInstability, FLAG_SEVERITY } from "./constants";
+import { toPatientInfo, isHighRisk, type PatientMetadata } from "./patientMetadataLoader";
 
 // ---- JSON schema from ventsight_label.py ----
 
@@ -28,21 +29,22 @@ function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v));
 }
 
-function getInstabilityTrend(trend: [string, number][]): "up" | "down" | "stable" {
-  if (trend.length < 2) return "stable";
-  const last = trend[trend.length - 1][1];
-  const prev = trend[trend.length - 2][1];
-  if (last - prev > 0.05) return "up";
-  if (prev - last > 0.05) return "down";
-  return "stable";
-}
-
 // ---- Main mapper — only uses real data from patient_rollup.json ----
 
-export function rollupToBeds(rollup: PatientRollup): BedData[] {
+export function rollupToBeds(rollup: PatientRollup, metadata?: PatientMetadata | null): BedData[] {
   return Object.entries(rollup).map(([hash, data], index) => {
     const instValue = clamp(data.mean_instability * 100, 0, 100);
-    const tier      = getSeverityFromInstability(instValue);
+    const baseTier  = getSeverityFromInstability(instValue);
+
+    // Old age or a lung-injury diagnosis raises the floor to at least
+    // Elevated -- these patients can still reach Critical on real PVA
+    // data, but never show as fully "Normal" risk regardless of how their
+    // instability index averages out. Metadata is per-patient demographic/
+    // diagnosis data (out_real/patient_metadata.json), separate from and
+    // additional to the PVA-derived instability score.
+    const metaEntry = metadata?.[hash];
+    const highRisk  = isHighRisk(metaEntry);
+    const tier      = highRisk && baseTier === "Normal" ? "Elevated" : baseTier;
 
     // Dominant PVA flag (skip normal / unclassified)
     const pvaCounts = Object.entries(data.category_counts)
@@ -60,15 +62,21 @@ export function rollupToBeds(rollup: PatientRollup): BedData[] {
     const pvaBreathFrac = totalBreaths > 0 ? pvaBreadths / totalBreaths : 0;
     const confidence    = clamp(pvaBreathFrac * 1.4, 0, 0.95);
 
-    const pvaSeverity: Severity = getSeverityFromInstability(instValue);
-
-    const latestPrediction = dominantFlag && pvaSeverity !== "Normal"
+    // Whether to SHOW a dominant PVA flag depends only on whether one exists
+    // (any real, non-normal/unclassified breaths) -- NOT on the patient's
+    // overall averaged instability tier, which dilutes across their whole
+    // (mostly-normal) breath history and was previously suppressing real,
+    // substantial PVA findings (e.g. 348 real delayed_termination breaths
+    // out of 3354 total still averages out to an overall "Normal" tier).
+    // Severity for the badge's color comes from the flag's OWN clinical
+    // weight, same mapping realDataLoader.ts uses per-capture.
+    const latestPrediction = dominantFlag
       ? {
           breath_idx:  totalBreaths,
           timestamp_s: Date.now() / 1000,
           flags:       [dominantFlag],
           confidence:  parseFloat(confidence.toFixed(2)),
-          severity:    pvaSeverity,
+          severity:    FLAG_SEVERITY[dominantFlag] ?? "Elevated",
           metrics: {
             compliance:       null,
             resistance:       null,
@@ -93,12 +101,12 @@ export function rollupToBeds(rollup: PatientRollup): BedData[] {
       fluidBalance:     null,
       isConnected:      true,
       newsScore:        0,
-      newsTrend:        getInstabilityTrend(data.instability_trend),
-      patientInfo:      null,
+      patientInfo:      metaEntry ? toPatientInfo(metaEntry) : null,
       // Real summary fields
       captureCount:     data.n_captures,
       totalBreaths:     data.n_breaths,
       pvaBreathFrac:    parseFloat(pvaBreathFrac.toFixed(3)),
+      highRisk,
     };
   });
 }

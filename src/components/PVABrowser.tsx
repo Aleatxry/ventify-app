@@ -5,7 +5,6 @@ import dynamic from "next/dynamic";
 import type { HourlyCapture } from "@/lib/mockHistory";
 import { PVA_ABBREV } from "@/lib/mockHistory";
 import { PVA_LABELS, WAVEFORM_COLORS } from "@/lib/constants";
-import AlertBadge from "./AlertBadge";
 
 const BrowserWaveform = dynamic(() => import("./PVABrowserWaveform"), { ssr: false });
 
@@ -153,10 +152,8 @@ export default function PVABrowser({ captures, totalCaptures }: PVABrowserProps)
           </span>
         </div>
 
-        {/* Right: model confidence (visually distinct from vitals %) + severity badge */}
+        {/* Right: model confidence (visually distinct from vitals %) */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-          <AlertBadge severity={cap.severity} size="sm" />
-
           {/* Confidence: labelled "MODEL CONF." in accent blue, not severity-colored */}
           <div style={{ textAlign: "right" }}>
             <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.07em", color: "rgba(10,132,255,0.6)", textTransform: "uppercase", marginBottom: 2 }}>

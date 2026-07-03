@@ -1,6 +1,6 @@
 import type {
   CsvWaveformPoint, DetectedBreath, BreathFeatures,
-  LabelMatrixRow, PVALabel,
+  LabelMatrixRow, PVALabel, HLALabel, HLAResult,
 } from "@/types/demo";
 
 // ─── CSV Parser ───────────────────────────────────────────────
@@ -80,8 +80,13 @@ function segmentByVolume(data: CsvWaveformPoint[]): DetectedBreath[] {
   }
 
   const breaths: DetectedBreath[] = [];
-  for (let i = 0; i < starts.length - 1; i++) {
-    const s = starts[i], e = starts[i + 1] - 1;
+  for (let i = 0; i < starts.length; i++) {
+    const s = starts[i];
+    // Last start has no "next start" to close it — without this, the trailing
+    // breath in any recording is silently dropped rather than segmented
+    // (confirmed: generateSampleCSV's 14th breath never appeared in output).
+    // Trail it to the end of the data instead, same as every other breath.
+    const e = i + 1 < starts.length ? starts[i + 1] - 1 : data.length - 1;
     if (e - s < MIN_PTS) continue;
     const duration = data[e].time - data[s].time;
     if (duration < MIN_DURATION_S) continue;
@@ -214,17 +219,43 @@ const LABELING_FUNCTIONS: LabelingFunction[] = [
     fn: (f) => f.iTime > 0.8 && f.ieRatio > 0.5 && f.flowAtEndInsp > 20,
   },
 
-  // ── Premature Cycling ──────────────────────────────────────────
+  // ── Early Termination (Premature Cycling) ─────────────────────
   // Ventilator stops delivering before patient finishes inspiring
   {
-    name: "lf_pc_short_exp_high_ie",
-    label: "premature_cycling",
+    name: "lf_et_short_exp_high_ie",
+    label: "early_termination",
     fn: (f) => f.eTime < 0.8 && f.eTime > 0.1 && f.ieRatio > 0.5,
   },
   {
-    name: "lf_pc_very_high_ie_ratio",
-    label: "premature_cycling",
+    name: "lf_et_very_high_ie_ratio",
+    label: "early_termination",
     fn: (f) => f.ieRatio > 0.8 && f.eTime < 1.0,
+  },
+
+  // ── Delayed Termination ────────────────────────────────────────
+  // Ventilator keeps inflating past when patient stopped wanting it
+  {
+    name: "lf_dtm_prolonged_itime",
+    label: "delayed_termination",
+    fn: (f) => f.iTime > 0.90 && f.ieRatio > 0.75,
+  },
+  {
+    name: "lf_dtm_high_dp_long_insp",
+    label: "delayed_termination",
+    fn: (f) => f.drivingPressure > 14 && f.iTime > 0.80 && f.eTime < 0.70,
+  },
+
+  // ── Air Trapping ───────────────────────────────────────────────
+  // Not enough expiratory time to exhale the delivered volume
+  {
+    name: "lf_at_short_etime_high_vt",
+    label: "air_trapping",
+    fn: (f) => f.eTime < 0.65 && f.vt > 320,
+  },
+  {
+    name: "lf_at_very_short_etime",
+    label: "air_trapping",
+    fn: (f) => f.eTime < 0.50 && f.vt > 180,
   },
 
   // ── Ineffective Effort ─────────────────────────────────────────
@@ -265,7 +296,8 @@ function applyLabelingFunctions(f: BreathFeatures): {
 
   const classProbabilities: Record<PVALabel, number> = {
     Normal: 0, double_trigger: 0, flow_starvation: 0,
-    premature_cycling: 0, ineffective_effort: 0,
+    early_termination: 0, ineffective_effort: 0,
+    delayed_termination: 0, air_trapping: 0,
   };
 
   if (totalVotes === 0) {
@@ -281,7 +313,7 @@ function applyLabelingFunctions(f: BreathFeatures): {
   const isUncertain = classesWithVotes > 1;
 
   // Tie-break by clinical priority
-  const priority: PVAClass[] = ["double_trigger", "flow_starvation", "premature_cycling", "ineffective_effort"];
+  const priority: PVAClass[] = ["double_trigger", "flow_starvation", "early_termination", "ineffective_effort", "delayed_termination", "air_trapping"];
   let winner: PVALabel = "Normal";
   let maxCount = 0;
 
@@ -306,10 +338,12 @@ export function classifyBreaths(
     const { label, confidence, fired, firedLFs, classProbabilities, isUncertain } = applyLabelingFunctions(f);
     return {
       breathIdx:             breaths[i].idx,
-      lf_double_trigger:     fired["double_trigger"]     ? 1 : 0,
-      lf_ineffective_effort: fired["ineffective_effort"] ? 1 : 0,
-      lf_flow_starvation:    fired["flow_starvation"]    ? 1 : 0,
-      lf_premature_cycling:  fired["premature_cycling"]  ? 1 : 0,
+      lf_double_trigger:      fired["double_trigger"]      ? 1 : 0,
+      lf_ineffective_effort:  fired["ineffective_effort"]  ? 1 : 0,
+      lf_flow_starvation:     fired["flow_starvation"]     ? 1 : 0,
+      lf_early_termination:   fired["early_termination"]   ? 1 : 0,
+      lf_delayed_termination: fired["delayed_termination"] ? 1 : 0,
+      lf_air_trapping:        fired["air_trapping"]        ? 1 : 0,
       finalLabel:            label,
       confidence,
       classProbabilities,
@@ -327,6 +361,180 @@ export function runSnorkel(
   return classifyBreaths(data, breaths, features);
 }
 
+// ─── HLA: Hysteresis Loop Analysis (Ang et al. 2024) ─────────────────────────
+// A SECOND, methodologically independent, label-free classifier — ports the
+// same core/backend algorithm in ventsight_hla.py (DP-optimal piecewise
+// P-vs-V regression per half-cycle + a nested F-test for segment count, then
+// Table 1's segment-count/slope-sign/breakpoint-volume rules) into JS, so
+// the demo can show it as its own level rather than calling the Python
+// backend (matching how Layer1/Layer2/Snorkel above are already JS-native
+// reimplementations, not calls into the real pipeline). Judges the loop's
+// GEOMETRY, where the LFs above judge the TIME-domain shape — HLA also
+// reaches reverse-triggering and auto-triggering, which the LFs can't.
+
+const HLA_MIN_SEG_LEN = 3;
+const HLA_MAX_SEG     = 5;
+const HLA_F_CRIT       = 8.0;   // heuristic critical value, tuned on synthetic
+                                // loops (see ventsight_hla.py) so a noisy 2-seg
+                                // loop stays 2 and a real multi-kink loop splits
+const HLA_SLOPE_TOL    = 1e-3;
+const HLA_EPS_CLOSE    = 100.0; // mL — Ang 2024 uses 0.1 L; end-expiratory
+                                // volume above this means the loop doesn't close
+
+export const HLA_TO_LF_LABEL: Record<HLALabel, PVALabel | null> = {
+  normal:              "Normal",
+  flow_asynchrony:     "flow_starvation",
+  reverse_triggering:  null,   // no LF counterpart — coverage HLA adds
+  premature_cycling:   "early_termination",
+  double_triggering:   "double_trigger",
+  delayed_cycling:     "delayed_termination",
+  ineffective_effort:  "ineffective_effort",
+  auto_triggering:     null,   // no LF counterpart — coverage HLA adds
+};
+
+function lineFit(v: number[], p: number[]): [slope: number, intercept: number, rsse: number] {
+  const n = v.length;
+  const meanV = v.reduce((a, b) => a + b, 0) / n;
+  const meanP = p.reduce((a, b) => a + b, 0) / n;
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++) { num += (v[i] - meanV) * (p[i] - meanP); den += (v[i] - meanV) ** 2; }
+  const m = den === 0 ? 0 : num / den;
+  const c = meanP - m * meanV;
+  let rsse = 0;
+  for (let i = 0; i < n; i++) { const r = p[i] - (m * v[i] + c); rsse += r * r; }
+  return [m, c, rsse];
+}
+
+/** err[i][j] = RSSE of ONE line over points i..j inclusive (Infinity if too short). */
+function segErrors(v: number[], p: number[]): number[][] {
+  const N = v.length;
+  const err: number[][] = Array.from({ length: N }, () => new Array(N).fill(Infinity));
+  for (let i = 0; i < N; i++)
+    for (let j = i + HLA_MIN_SEG_LEN - 1; j < N; j++)
+      err[i][j] = lineFit(v.slice(i, j + 1), p.slice(i, j + 1))[2];
+  return err;
+}
+
+/** DP over precomputed segment errors -> optimal n-segment partition. */
+function bestSeg(err: number[][], N: number, n: number): [rsse: number, bounds: [number, number][]] {
+  if (N < n * HLA_MIN_SEG_LEN) return [Infinity, []];
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(N).fill(Infinity));
+  const bp: number[][] = Array.from({ length: n + 1 }, () => new Array(N).fill(-1));
+  for (let j = 0; j < N; j++) dp[1][j] = err[0][j];
+  for (let k = 2; k <= n; k++)
+    for (let j = 0; j < N; j++)
+      for (let m = k - 1; m < j; m++) {
+        const cand = dp[k - 1][m] + err[m + 1][j];
+        if (cand < dp[k][j]) { dp[k][j] = cand; bp[k][j] = m; }
+      }
+  if (!isFinite(dp[n][N - 1])) return [Infinity, []];
+  const bounds: [number, number][] = [];
+  let j = N - 1;
+  for (let k = n; k >= 1; k--) {
+    const m = bp[k][j];
+    bounds.push([k > 1 ? m + 1 : 0, j]);
+    j = m;
+  }
+  bounds.reverse();
+  return [dp[n][N - 1], bounds];
+}
+
+/** F-test piecewise fit of one half-cycle -> (n, per-segment slopes, internal
+ * breakpoint volumes). A normal half-cycle needs 2 segments; asynchrony forces
+ * more, but only if the RSSE reduction clears the noise floor (HLA_F_CRIT). */
+function segmentLimb(v: number[], p: number[]): [n: number, slopes: number[], brkVols: number[]] {
+  const N = v.length;
+  if (N < 2 * HLA_MIN_SEG_LEN) return N >= 2 ? [1, [lineFit(v, p)[0]], []] : [1, [], []];
+  const err = segErrors(v, p);
+  const kmax = Math.min(HLA_MAX_SEG, Math.floor(N / HLA_MIN_SEG_LEN));
+  const rsse: Record<number, number> = {};
+  for (let k = 2; k <= kmax; k++) rsse[k] = bestSeg(err, N, k)[0];
+
+  const meanP = p.reduce((a, b) => a + b, 0) / N;
+  const tss = p.reduce((s, pi) => s + (pi - meanP) ** 2, 0);
+  const df = N - 4;
+  let n = 2;
+  if (!(df <= 0 || tss <= 0 || !isFinite(rsse[2]) || rsse[2] / tss < 1e-3)) {
+    const sigma2 = rsse[2] / df;
+    while (n < kmax) {
+      if (!isFinite(rsse[n + 1])) break;
+      if ((rsse[n] - rsse[n + 1]) / sigma2 > HLA_F_CRIT) n++; else break;
+    }
+  }
+  const [, bounds] = bestSeg(err, N, n);
+  const slopes = bounds.map(([lo, hi]) => lineFit(v.slice(lo, hi + 1), p.slice(lo, hi + 1))[0]);
+  const brkVols = bounds.slice(0, -1).map(([, hi]) => v[hi]);
+  return [n, slopes, brkVols];
+}
+
+function hlaSigns(slopes: number[]): number[] {
+  return slopes.map(s => (s > HLA_SLOPE_TOL ? 1 : s < -HLA_SLOPE_TOL ? -1 : 0));
+}
+
+function signsMatch(a: number[], b: number[]): boolean {
+  return a.length === b.length && a.every((x, i) => x === b[i]);
+}
+
+/** One breath -> an HLAResult (see Table 1, ventsight_hla.py's classify_breath
+ * for the same rules on the Python side). First matching rule wins. */
+export function classifyHLA(data: CsvWaveformPoint[], breath: DetectedBreath): HLAResult {
+  const slice = data.slice(breath.startIdx, breath.endIdx + 1);
+  const volumes = slice.map(p => p.volume);
+  const v0 = Math.min(...volumes);
+  const peakVolIdx = volumes.indexOf(Math.max(...volumes));
+
+  // Same peak-volume half-cycle split as computeFeatures above. Pressure is
+  // left un-baselined here (unlike the Python side's PEEP subtraction) since
+  // every rule below only reads segment SLOPES or volume differences, and an
+  // OLS slope is invariant to a constant shift in either axis.
+  const insp = slice.slice(0, peakVolIdx + 1);
+  const exp  = slice.slice(peakVolIdx);
+  const vi = insp.map(pt => pt.volume - v0), pi = insp.map(pt => pt.pressure);
+  const ve = exp.map(pt => pt.volume - v0),  pe = exp.map(pt => pt.pressure);
+
+  const fallback: HLAResult = { breathIdx: breath.idx, label: "normal", nInsp: 0, nExp: 0, inspSlopes: [], expSlopes: [] };
+  if (vi.length < 2 * HLA_MIN_SEG_LEN || ve.length < 2 * HLA_MIN_SEG_LEN) return fallback;
+  const vt = vi[vi.length - 1];
+  if (vt <= 0) return fallback;
+
+  const [ni, si] = segmentLimb(vi, pi);
+  const [ne, se, bxe] = segmentLimb(ve, pe);
+  const gi = hlaSigns(si), ge = hlaSigns(se);
+  const base = { breathIdx: breath.idx, nInsp: ni, nExp: ne, inspSlopes: si, expSlopes: se };
+
+  // AT — loop fails to close (non-zero end-expiratory volume, e.g. circuit leak)
+  if (ve[ve.length - 1] > HLA_EPS_CLOSE) return { ...base, label: "auto_triggering" };
+
+  // DT — 5 segments over inspiration, volume-stacking shape
+  if (ni === 5 && si[0] > 0 && si[0] > si[1] && si[2] > si[1] && si[3] > si[2])
+    return { ...base, label: "double_triggering" };
+
+  // Inspiratory-limb asynchronies (FA / DC share a sign pattern; RT distinct)
+  if (ni === 4) {
+    if (signsMatch(gi, [1, -1, 1, 1])) {
+      if (si[3] > 2 * si[2]) return { ...base, label: "delayed_cycling" };
+      return { ...base, label: "flow_asynchrony" };
+    }
+    if (signsMatch(gi, [1, 1, -1, 1])) return { ...base, label: "reverse_triggering" };
+  }
+
+  // Expiratory-limb asynchronies (PC / IE), located by how far into
+  // expiration the distortion sits relative to tidal volume
+  if (ne === 4 && bxe.length) {
+    const vN0 = ve[0];
+    const drop1 = vN0 - bxe[0];
+    const drop2 = bxe.length > 1 ? vN0 - bxe[1] : drop1;
+    if (signsMatch(ge, [1, -1, 1, 1]) && drop1 < 0.5 * vt) return { ...base, label: "premature_cycling" };
+    if (signsMatch(ge, [1, 1, -1, 1]) && drop2 > 0.5 * vt) return { ...base, label: "ineffective_effort" };
+  }
+
+  return { ...base, label: "normal" };
+}
+
+export function computeAllHLA(data: CsvWaveformPoint[], breaths: DetectedBreath[]): HLAResult[] {
+  return breaths.map(b => classifyHLA(data, b));
+}
+
 // ─── Sample CSV Generator ─────────────────────────────────────
 
 function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
@@ -335,54 +543,68 @@ function randn(m = 0, s = 1) {
   return m + s * Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
 }
 
-type BreathType = "normal" | "double_trigger" | "ineffective_effort" | "flow_starvation" | "premature_cycling";
+type BreathType = "normal" | "double_trigger" | "ineffective_effort" | "flow_starvation" | "early_termination" | "delayed_termination" | "air_trapping";
+
+// period/inspFrac/peakFlow are chosen so each type's OWN computeFeatures()
+// output actually crosses its OWN LABELING_FUNCTIONS thresholds above — the
+// original version only perturbed flow/pressure cosmetically (a late flow
+// blip for double_trigger, a pressure dip for ineffective_effort) without
+// checking whether that moved the specific feature each LF reads. It didn't:
+// e.g. ineffective_effort's LFs check tidal volume, but the old generator
+// only perturbed pressure, so vt never dropped and the LF never fired for
+// ANY of the 6 injected abnormal types (verified via a diagnostic route
+// before this fix — every one landed as "Normal" through classifyBreaths).
+interface BreathSpec { type: BreathType; period: number; inspFrac: number; peakFlow: number }
+
+const SPECS: BreathSpec[] = [
+  { type: "normal",              period: 2.8, inspFrac: 0.38, peakFlow: 42 },
+  { type: "normal",              period: 3.0, inspFrac: 0.38, peakFlow: 42 },
+  { type: "double_trigger",      period: 1.0, inspFrac: 0.30, peakFlow: 58 },
+  { type: "normal",              period: 2.9, inspFrac: 0.38, peakFlow: 42 },
+  { type: "flow_starvation",     period: 3.0, inspFrac: 0.45, peakFlow: 40 },
+  { type: "normal",              period: 2.7, inspFrac: 0.38, peakFlow: 42 },
+  { type: "early_termination",   period: 1.6, inspFrac: 0.78, peakFlow: 42 },
+  { type: "delayed_termination", period: 2.3, inspFrac: 0.68, peakFlow: 42 },
+  { type: "air_trapping",        period: 1.3, inspFrac: 0.65, peakFlow: 42 },
+  { type: "normal",              period: 3.0, inspFrac: 0.38, peakFlow: 42 },
+  { type: "ineffective_effort",  period: 2.6, inspFrac: 0.38, peakFlow: 13 },
+  { type: "normal",              period: 2.8, inspFrac: 0.38, peakFlow: 42 },
+  { type: "normal",              period: 2.9, inspFrac: 0.38, peakFlow: 42 },
+  { type: "double_trigger",      period: 1.1, inspFrac: 0.30, peakFlow: 58 },
+];
 
 export function generateSampleCSV(): string {
   const HZ = 25; const dt = 1 / HZ;
-
-  const SPECS: { type: BreathType; period: number }[] = [
-    { type: "normal",             period: 2.8 },
-    { type: "normal",             period: 3.0 },
-    { type: "double_trigger",     period: 3.2 },
-    { type: "normal",             period: 2.9 },
-    { type: "flow_starvation",    period: 3.1 },
-    { type: "normal",             period: 2.7 },
-    { type: "premature_cycling",  period: 2.3 },
-    { type: "normal",             period: 3.0 },
-    { type: "ineffective_effort", period: 3.0 },
-    { type: "normal",             period: 2.8 },
-    { type: "normal",             period: 2.9 },
-    { type: "double_trigger",     period: 3.0 },
-  ];
 
   const rows = ["time,pressure,flow,volume"];
   let t = 0;
 
   for (const spec of SPECS) {
     const n = Math.round(spec.period * HZ);
-    const inspEnd = spec.period * 0.38;
+    const inspEnd = spec.period * spec.inspFrac;
     let vol = 0;
 
     for (let i = 0; i < n; i++) {
       const ti = i * dt;
       const isInsp = ti < inspEnd;
 
-      let fBase = isInsp
-        ? 42 * Math.sin(Math.PI * ti / inspEnd)
-        : -22 * Math.sin(Math.PI * (ti - inspEnd) / (spec.period - inspEnd));
+      let fBase: number;
+      if (spec.type === "flow_starvation" && isInsp) {
+        // Clinical signature: flow stays demanded/high right up to the end
+        // of inspiration instead of tapering off — a fast ramp then a
+        // plateau near peakFlow, not a sine that decays back to 0.
+        fBase = Math.min(spec.peakFlow, spec.peakFlow * (ti / (inspEnd * 0.3)));
+      } else {
+        fBase = isInsp
+          ? spec.peakFlow * Math.sin(Math.PI * ti / inspEnd)
+          : -22 * Math.sin(Math.PI * (ti - inspEnd) / (spec.period - inspEnd));
+      }
 
-      if (spec.type === "double_trigger" && ti > spec.period * 0.78 && ti < spec.period * 0.95)
-        fBase += 18 * Math.sin(Math.PI * (ti - spec.period * 0.78) / (spec.period * 0.17));
-      if (spec.type === "flow_starvation" && isInsp) fBase = clamp(fBase, 0, 28 + randn(0, 1));
-      if (spec.type === "premature_cycling" && !isInsp && ti - inspEnd < 0.3) fBase *= 0.2;
+      const flow = clamp(fBase + randn(0, 0.8), -35, 65);
 
-      const flow = clamp(fBase + randn(0, 0.8), -35, 60);
-
-      let pBase = isInsp
+      const pBase = isInsp
         ? 8 + 18 * Math.sin(Math.PI * ti / inspEnd)
         : 8 + 3 * Math.exp(-4 * (ti - inspEnd) / (spec.period - inspEnd));
-      if (spec.type === "ineffective_effort" && !isInsp && ti - inspEnd > 0.4 && ti - inspEnd < 0.9)
-        pBase -= 4 * Math.sin(Math.PI * (ti - inspEnd - 0.4) / 0.5);
 
       const pressure = clamp(pBase + randn(0, 0.4), 3, 44);
       const dvol = (Math.abs(flow) / 60) * dt * 1000;

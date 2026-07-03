@@ -1,17 +1,10 @@
 "use client";
 
-import type { HourlyCapture, WaveformPoint, PVABand, InstabilityClass, BreathMetrics } from "./mockHistory";
+import type { HourlyCapture, WaveformPoint, PVABand, BreathMetrics } from "./mockHistory";
 import type { PVAFlag, Severity } from "@/types/ventify";
 import type { PatientRollup, PatientRollupEntry } from "./rollupLoader";
-
-const FLAG_SEVERITY: Record<string, Severity> = {
-  flow_starvation:     "Critical",
-  double_trigger:      "Elevated",
-  ineffective_effort:  "Elevated",
-  early_termination:   "Elevated",
-  delayed_termination: "Elevated",
-  air_trapping:        "Critical",
-};
+import { FLAG_SEVERITY } from "./constants";
+import { segmentBreaths } from "./demoPipeline";
 
 const VALID_FLAGS = new Set([
   "flow_starvation", "double_trigger", "ineffective_effort",
@@ -60,19 +53,6 @@ function parseCSV(text: string): WaveformPoint[] {
     });
   }
   return result;
-}
-
-function classifyFromRollup(data: PatientRollupEntry): InstabilityClass {
-  const inst     = data.mean_instability;
-  const totalPVA = data.n_breaths
-    - (data.category_counts.normal      ?? 0)
-    - (data.category_counts.unclassified ?? 0);
-  const hasCritical = ((data.category_counts.flow_starvation ?? 0)
-                     + (data.category_counts.air_trapping    ?? 0)) > 0;
-  if (inst >= 0.40 || (hasCritical && totalPVA / Math.max(data.n_breaths, 1) > 0.3)) return "Critical";
-  if (inst >= 0.15 || hasCritical) return "Elevated";
-  if (totalPVA > 0) return "Mild";
-  return "Stable";
 }
 
 // ---- Breath metrics computation from raw waveform ----
@@ -160,21 +140,10 @@ function computeBreathMetrics(waveform: WaveformPoint[]): BreathMetrics[] {
   return metrics;
 }
 
-function viiTrendFromRollup(data: PatientRollupEntry): "up" | "down" | "stable" {
-  const trend = data.instability_trend;
-  if (trend.length < 2) return "stable";
-  const last = trend[trend.length - 1][1];
-  const prev = trend[trend.length - 2][1];
-  if (last - prev >  0.05) return "up";
-  if (prev - last >  0.05) return "down";
-  return "stable";
-}
-
 export interface RealBedHistory {
   captures:         HourlyCapture[];
   totalCaptures:    number;
-  instabilityClass: InstabilityClass;
-  viiTrend:         "up" | "down" | "stable";
+  patientHash:      string;
 }
 
 export async function loadRealCaptures(bedId: string): Promise<RealBedHistory | null> {
@@ -223,12 +192,27 @@ export async function loadRealCaptures(bedId: string): Promise<RealBedHistory | 
             b.category !== "normal" && b.category !== "unclassified" && VALID_FLAGS.has(b.category)
           );
 
-          // Per-breath bands with flag embedded
-          const pvaBands: PVABand[] = pvaBreaths.map(b => ({
-            x1:   parseFloat(((b.index - 1) * duration / nBreaths).toFixed(3)),
-            x2:   parseFloat((b.index       * duration / nBreaths).toFixed(3)),
-            flag: b.category as PVAFlag,
-          }));
+          // cluster_breaths.json only carries a breath INDEX, not its real
+          // start/end time -- dividing duration evenly by breath count
+          // assumed every breath is the same width, which real breaths
+          // aren't (confirmed against actual capture charts: breath widths
+          // visibly vary). Detect real breath boundaries in this capture's
+          // own waveform instead, and use the ACTUAL breath at each index's
+          // position for the highlight band's time range. Falls back to the
+          // old even-division estimate only if detection finds fewer
+          // breaths than the index needs (e.g. a differently-tuned JS
+          // detector vs. the Python pipeline's own segmentation).
+          const detected = segmentBreaths(waveformData);
+          const pvaBands: PVABand[] = pvaBreaths.map(b => {
+            const real = detected[b.index];
+            return real
+              ? { x1: parseFloat(real.startTime.toFixed(3)), x2: parseFloat(real.endTime.toFixed(3)), flag: b.category as PVAFlag }
+              : {
+                  x1: parseFloat(((b.index - 1) * duration / nBreaths).toFixed(3)),
+                  x2: parseFloat((b.index * duration / nBreaths).toFixed(3)),
+                  flag: b.category as PVAFlag,
+                };
+          });
 
           // Unique flags in appearance order
           const seenFlags = new Set<PVAFlag>();
@@ -273,9 +257,8 @@ export async function loadRealCaptures(bedId: string): Promise<RealBedHistory | 
 
     return {
       captures,
-      totalCaptures:    captures.length,
-      instabilityClass: classifyFromRollup(rollupData),
-      viiTrend:         viiTrendFromRollup(rollupData),
+      totalCaptures: captures.length,
+      patientHash,
     };
   } catch {
     return null;
