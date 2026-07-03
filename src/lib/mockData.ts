@@ -113,9 +113,9 @@ function pickSeverity(weights: SeverityWeights): Severity {
   return "Normal";
 }
 
-const PVA_FLAGS: PVAFlag[] = ["double_trigger", "ineffective_effort", "flow_starvation", "premature_cycling"];
+const PVA_FLAGS: PVAFlag[] = ["double_trigger", "ineffective_effort", "flow_starvation", "early_termination", "delayed_termination", "air_trapping"];
 
-function generateWaveform(severity: Severity, breathPeriod = 2.4) {
+export function generateWaveform(severity: Severity, breathPeriod = 2.4) {
   const HZ = 20;
   const n = Math.round(breathPeriod * HZ);
   const time: number[] = [];
@@ -200,7 +200,7 @@ function generateVitals(config: BedConfig): Vitals {
   };
 }
 
-function appendToWaveformBuffer(
+export function appendToWaveformBuffer(
   buffer: WaveformPoint[],
   segment: { time: number[]; pressure: number[]; flow: number[]; volume: number[] },
   timestampS: number,
@@ -261,6 +261,7 @@ export function createMockWard(onUpdate: BedUpdateCallback) {
         newsScore: cfg.baseNews,
         newsTrend: cfg.newsTrend,
         patientInfo: cfg.patientInfo,
+        lastEventAt: new Date(Date.now() - Math.random() * 45000),
       };
     });
   }
@@ -297,6 +298,7 @@ export function createMockWard(onUpdate: BedUpdateCallback) {
         latestPrediction: prediction,
         instabilityIndex: { value: parseFloat(instValue.toFixed(1)), tier },
         waveformBuffer: buf,
+        lastEventAt: new Date(),
         ...(alertEntry.length > 0 ? { recentAlerts: alertEntry } : {}),
       });
 
