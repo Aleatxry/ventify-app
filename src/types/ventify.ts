@@ -4,7 +4,9 @@ export type PVAFlag =
   | "double_trigger"
   | "ineffective_effort"
   | "flow_starvation"
-  | "premature_cycling";
+  | "delayed_termination"
+  | "early_termination"
+  | "air_trapping";
 
 export interface BreathMetrics {
   compliance: number | null;
@@ -93,4 +95,5 @@ export interface BedData {
   newsScore: number;
   newsTrend: "up" | "down" | "stable";
   patientInfo: PatientInfo | null;
+  lastEventAt?: Date;
 }

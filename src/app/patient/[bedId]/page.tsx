@@ -4,21 +4,26 @@ import { use, useMemo } from "react";
 import dynamic from "next/dynamic";
 import Header from "@/components/Header";
 import InstabilityCard from "@/components/InstabilityCard";
-import CurrentPVACard from "@/components/CurrentPVACard";
 import MetricsPanel from "@/components/MetricsPanel";
 import VitalsStrip from "@/components/VitalsStrip";
-import AlertFeed from "@/components/AlertFeed";
+import AlertHistory from "@/components/AlertHistory";
 import PatientInfoCard from "@/components/PatientInfoCard";
+import CriticalBanner from "@/components/CriticalBanner";
+import PVASummaryCard from "@/components/PVASummaryCard";
 import EmptyState from "@/components/EmptyState";
 import { useVentifyStream } from "@/hooks/useVentifyStream";
+import { generateBedHistory } from "@/lib/mockHistory";
 
-const WaveformChart = dynamic(() => import("@/components/WaveformChart"), { ssr: false });
+const PVABrowser = dynamic(() => import("@/components/PVABrowser"), { ssr: false });
 
 export default function PatientPage({ params }: { params: Promise<{ bedId: string }> }) {
   const { bedId } = use(params);
   const { isConnected, bedData } = useVentifyStream(`mock://${bedId}`);
 
-  const allAlerts = useMemo(() => bedData?.recentAlerts ?? [], [bedData?.recentAlerts]);
+  const history = useMemo(
+    () => generateBedHistory(bedId, bedData?.instabilityIndex.value ?? 50),
+    [bedId],
+  );
 
   if (!bedData) {
     return (
@@ -43,33 +48,28 @@ export default function PatientPage({ params }: { params: Promise<{ bedId: strin
       />
 
       <main className="max-w-[1400px] mx-auto px-6 py-8">
+        {/* Multi-system deterioration banner — shown when 2+ vitals abnormal simultaneously */}
+        <CriticalBanner index={bedData.instabilityIndex} vitals={bedData.vitals} />
+
         <div className="grid gap-5" style={{ gridTemplateColumns: "1fr 340px" }}>
-          {/* LEFT: waveform */}
+
+          {/* LEFT: PVA capture browser + 24h timeline */}
           <div className="flex flex-col gap-5">
-            {bedData.waveformBuffer.length > 0 ? (
-              <WaveformChart buffer={bedData.waveformBuffer} alerts={allAlerts} />
-            ) : (
-              <div
-                className="rounded-2xl flex items-center justify-center"
-                style={{ height: 380, backgroundColor: "#0D1117" }}
-              >
-                <EmptyState message="Waiting for waveform data…" />
-              </div>
-            )}
+            <PVABrowser captures={history.captures} totalCaptures={history.totalCaptures} />
+            <AlertHistory captures={history.captures} />
           </div>
 
-          {/* RIGHT: info cards */}
+          {/* RIGHT: sidebar cards */}
           <div className="flex flex-col gap-4">
             {bedData.patientInfo && <PatientInfoCard info={bedData.patientInfo} />}
-            <InstabilityCard index={bedData.instabilityIndex} />
-            <CurrentPVACard prediction={bedData.latestPrediction} />
+            <InstabilityCard
+              instabilityClass={history.instabilityClass}
+              viiTrend={history.viiTrend}
+            />
+            <PVASummaryCard captures={history.captures} />
             <MetricsPanel metrics={bedData.latestPrediction?.metrics ?? null} />
             <VitalsStrip vitals={bedData.vitals} />
           </div>
-        </div>
-
-        <div className="mt-5">
-          <AlertFeed alerts={allAlerts} />
         </div>
       </main>
     </div>

@@ -9,17 +9,21 @@ export const SEVERITY_COLORS: Record<Severity, {
 };
 
 export const PVA_LABELS: Record<string, string> = {
-  double_trigger:     "Double Trigger",
-  ineffective_effort: "Ineffective Effort",
-  flow_starvation:    "Flow Starvation",
-  premature_cycling:  "Premature Cycling",
+  double_trigger:      "Double Trigger",
+  ineffective_effort:  "Ineffective Effort",
+  flow_starvation:     "Flow Starvation",
+  delayed_termination: "Delayed Termination",
+  early_termination:   "Early Termination",
+  air_trapping:        "Air Trapping",
 };
 
 export const PVA_SHORT: Record<string, string> = {
-  double_trigger:     "Dbl. Trigger",
-  ineffective_effort: "Ineff. Effort",
-  flow_starvation:    "Flow Starv.",
-  premature_cycling:  "Premature Cyc.",
+  double_trigger:      "Dbl. Trigger",
+  ineffective_effort:  "Ineff. Effort",
+  flow_starvation:     "Flow Starv.",
+  delayed_termination: "Delayed Term.",
+  early_termination:   "Early Term.",
+  air_trapping:        "Air Trapping",
 };
 
 export const WAVEFORM_COLORS = {
