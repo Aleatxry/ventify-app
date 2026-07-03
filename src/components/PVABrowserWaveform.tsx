@@ -63,13 +63,13 @@ const C = {
   peepLine: "rgba(10,132,255,0.65)",
 };
 
-/** Assign one flag per PVA breath band (cycling through flags). */
+/** Assign one flag per PVA breath band. Uses band.flag if present (real data), else cycles. */
 function buildBandAssignments(pvaBands: PVABand[], flags: PVAFlag[]) {
   if (flags.length === 0) return [];
   return pvaBands.map((band, i) => ({
     x1:   band.x1,
     x2:   band.x2,
-    flag: flags[i % flags.length],
+    flag: band.flag ?? flags[i % flags.length],
   }));
 }
 

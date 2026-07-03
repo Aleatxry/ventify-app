@@ -1,7 +1,7 @@
 "use client";
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import type { HourBucket } from "./AlertHistory";
+interface HourBucket { hour: number; label: string; total: number; counts: Record<string, number>; dominantSeverity: string; }
 
 interface Props {
   buckets: HourBucket[];

@@ -15,6 +15,7 @@ export interface WaveformPoint {
 export interface PVABand {
   x1: number;
   x2: number;
+  flag?: PVAFlag;  // per-band override (used by real data loader)
 }
 
 /** One hourly 10-second capture from the ventilator */
