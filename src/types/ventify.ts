@@ -96,4 +96,8 @@ export interface BedData {
   newsTrend: "up" | "down" | "stable";
   patientInfo: PatientInfo | null;
   lastEventAt?: Date;
+  // Real data fields from patient_rollup.json
+  captureCount?: number;
+  totalBreaths?: number;
+  pvaBreathFrac?: number;
 }

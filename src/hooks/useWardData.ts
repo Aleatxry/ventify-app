@@ -1,42 +1,30 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import type { BedData, WaveformPoint } from "@/types/ventify";
-import { createMockWard } from "@/lib/mockData";
+import { useState, useEffect } from "react";
+import type { BedData } from "@/types/ventify";
+import { rollupToBeds, type PatientRollup } from "@/lib/rollupLoader";
 
 export function useWardData() {
-  const [beds, setBeds] = useState<BedData[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [beds,        setBeds       ] = useState<BedData[]>([]);
+  const [isLoaded,    setIsLoaded   ] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const buffersRef = useRef<Map<string, WaveformPoint[]>>(new Map());
-
-  const onUpdate = useCallback((bedId: string, patch: Partial<BedData>) => {
-    setBeds(prev =>
-      prev.map(bed => {
-        if (bed.bedId !== bedId) return bed;
-        const next = { ...bed, ...patch };
-        if (patch.latestPrediction) {
-          next.breathHistory = [patch.latestPrediction.severity, ...bed.breathHistory].slice(0, 10);
-        }
-        if (patch.recentAlerts?.length) {
-          next.recentAlerts = [...patch.recentAlerts, ...bed.recentAlerts].slice(0, 50);
-        }
-        return next;
-      })
-    );
-    setLastUpdated(new Date());
-  }, []);
 
   useEffect(() => {
-    const ward = createMockWard(onUpdate);
-    const initial = ward.getInitialData();
-    setBeds(initial);
-    setIsLoaded(true);
-    setLastUpdated(new Date());
-    initial.forEach(b => buffersRef.current.set(b.bedId, b.waveformBuffer));
-    ward.start(buffersRef.current);
-    return () => ward.stop();
-  }, [onUpdate]);
+    async function init() {
+      try {
+        const res = await fetch("/data/patient_rollup.json");
+        if (!res.ok) throw new Error("not found");
+        const rollup: PatientRollup = await res.json();
+        setBeds(rollupToBeds(rollup));
+        setIsLoaded(true);
+        setLastUpdated(new Date());
+      } catch {
+        // No real data available — show nothing rather than fake data
+        setIsLoaded(true);
+      }
+    }
+    init();
+  }, []);
 
   const sortedBeds = [...beds].sort((a, b) => {
     const order = { Critical: 0, Elevated: 1, Normal: 2 };
