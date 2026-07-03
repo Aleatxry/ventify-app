@@ -18,6 +18,22 @@ export interface PVABand {
   flag?: PVAFlag;  // per-band override (used by real data loader)
 }
 
+export interface BreathMetrics {
+  breathNum:  number;
+  vt:         number;    // mL
+  pip:        number;    // cmH2O
+  peep:       number;    // cmH2O
+  dp:         number;    // cmH2O driving pressure
+  compliance: number | null;  // mL/cmH2O
+  rr:         number;    // bpm
+  ti:         number;    // s
+  te:         number;    // s
+  ie:         string;    // "1:2.3"
+  pif:        number;    // L/min
+  pef:        number;    // L/min
+  map:        number;    // mean airway pressure cmH2O
+}
+
 /** One hourly 10-second capture from the ventilator */
 export interface HourlyCapture {
   id: string;
@@ -28,6 +44,7 @@ export interface HourlyCapture {
   severity: Severity;
   waveformData: WaveformPoint[];  // 250 points, t = 0…9.96 s, 25 Hz
   pvaBands: PVABand[];            // highlight regions for PVA breaths
+  breathMetrics?: BreathMetrics[];  // per-breath metrics from waveform analysis
 }
 
 export interface HourlyBucket {

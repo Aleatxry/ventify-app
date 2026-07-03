@@ -1,6 +1,6 @@
 "use client";
 
-import type { HourlyCapture, WaveformPoint, PVABand, InstabilityClass } from "./mockHistory";
+import type { HourlyCapture, WaveformPoint, PVABand, InstabilityClass, BreathMetrics } from "./mockHistory";
 import type { PVAFlag, Severity } from "@/types/ventify";
 import type { PatientRollup, PatientRollupEntry } from "./rollupLoader";
 
@@ -73,6 +73,91 @@ function classifyFromRollup(data: PatientRollupEntry): InstabilityClass {
   if (inst >= 0.15 || hasCritical) return "Elevated";
   if (totalPVA > 0) return "Mild";
   return "Stable";
+}
+
+// ---- Breath metrics computation from raw waveform ----
+
+function computeBreathMetrics(waveform: WaveformPoint[]): BreathMetrics[] {
+  const MIN_GAP = 20; // min 20 samples (0.8s) between breath starts
+  const n = waveform.length;
+
+  // Zero-crossings: flow neg→pos = inspiration starts
+  const breathStarts: number[] = [];
+  for (let i = 1; i < n; i++) {
+    if (waveform[i - 1].flow < 0 && waveform[i].flow >= 0) {
+      const last = breathStarts[breathStarts.length - 1] ?? -999;
+      if (i - last > MIN_GAP) breathStarts.push(i);
+    }
+  }
+  if (breathStarts.length < 2) return [];
+
+  // Average duration of complete breaths (skip last partial)
+  let totalDur = 0;
+  for (let i = 0; i < breathStarts.length - 1; i++) {
+    totalDur += breathStarts[i + 1] - breathStarts[i];
+  }
+  const avgDur = totalDur / (breathStarts.length - 1);
+
+  // Start from first full breath (skip leading partial if capture began mid-expiration)
+  const startIdx = waveform[0].flow < 0 ? 1 : 0;
+  const metrics: BreathMetrics[] = [];
+
+  for (let i = startIdx; i < breathStarts.length; i++) {
+    const s   = breathStarts[i];
+    const e   = i + 1 < breathStarts.length ? breathStarts[i + 1] : n;
+    const len = e - s;
+
+    // Skip final breath if clearly truncated at capture boundary
+    if (i === breathStarts.length - 1 && len < avgDur * 0.65) continue;
+
+    const seg = waveform.slice(s, e);
+    if (seg.length < 8) continue;
+
+    // Insp/exp split: first index where flow goes negative
+    let ieSplit = seg.findIndex((p, j) => j > 0 && p.flow < 0);
+    if (ieSplit < 1) ieSplit = Math.floor(seg.length * 2 / 3);
+
+    const inspSeg = seg.slice(0, ieSplit);
+    const expSeg  = seg.slice(ieSplit);
+    if (inspSeg.length === 0) continue;
+
+    const Ti = ieSplit * 0.04;
+    const Te = (seg.length - ieSplit) * 0.04;
+    const RR = 60 / (seg.length * 0.04);
+
+    const pip  = Math.max(...inspSeg.map(p => p.pressure));
+    const peepWin = expSeg.slice(-Math.max(3, Math.floor(expSeg.length / 4)));
+    const peep = peepWin.length > 0
+      ? peepWin.reduce((acc, p) => acc + p.pressure, 0) / peepWin.length
+      : Math.min(...expSeg.map(p => p.pressure));
+    const dp   = pip - peep;
+
+    const vols = seg.map(p => p.volume);
+    const vt   = Math.max(...vols) - Math.min(...vols);
+    const comp = dp > 2 ? vt / dp : null;
+
+    const pif  = Math.max(...inspSeg.map(p => p.flow));
+    const pef  = expSeg.length > 0 ? Math.abs(Math.min(...expSeg.map(p => p.flow))) : 0;
+    const map  = seg.reduce((acc, p) => acc + p.pressure, 0) / seg.length;
+
+    metrics.push({
+      breathNum:  metrics.length + 1,
+      vt:         Math.round(vt),
+      pip:        parseFloat(pip.toFixed(1)),
+      peep:       parseFloat(peep.toFixed(1)),
+      dp:         parseFloat(dp.toFixed(1)),
+      compliance: comp !== null ? parseFloat(comp.toFixed(1)) : null,
+      rr:         parseFloat(RR.toFixed(1)),
+      ti:         parseFloat(Ti.toFixed(2)),
+      te:         parseFloat(Te.toFixed(2)),
+      ie:         Ti > 0 ? `1:${parseFloat((Te / Ti).toFixed(1))}` : "N/A",
+      pif:        parseFloat(pif.toFixed(1)),
+      pef:        parseFloat(pef.toFixed(1)),
+      map:        parseFloat(map.toFixed(1)),
+    });
+  }
+
+  return metrics;
 }
 
 function viiTrendFromRollup(data: PatientRollupEntry): "up" | "down" | "stable" {
@@ -166,7 +251,7 @@ export async function loadRealCaptures(bedId: string): Promise<RealBedHistory | 
           const { hour, timestampS } = parseCaptureTime(path);
 
           captures.push({
-            id:          path.replace("_WaveformExport.csv", ""),
+            id:           path.replace("_WaveformExport.csv", ""),
             hour,
             timestampS,
             flags,
@@ -174,6 +259,7 @@ export async function loadRealCaptures(bedId: string): Promise<RealBedHistory | 
             severity,
             waveformData,
             pvaBands,
+            breathMetrics: computeBreathMetrics(waveformData),
           });
         } catch {
           // skip individual CSV errors

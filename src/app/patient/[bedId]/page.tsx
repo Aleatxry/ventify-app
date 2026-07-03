@@ -6,6 +6,7 @@ import Header from "@/components/Header";
 import InstabilityCard from "@/components/InstabilityCard";
 import AlertHistory from "@/components/AlertHistory";
 import PVASummaryCard from "@/components/PVASummaryCard";
+import BreathMetricsCard from "@/components/BreathMetricsCard";
 import EmptyState from "@/components/EmptyState";
 import { loadRealCaptures, type RealBedHistory } from "@/lib/realDataLoader";
 
@@ -55,6 +56,7 @@ export default function PatientPage({ params }: { params: Promise<{ bedId: strin
                 instabilityClass={history.instabilityClass}
                 viiTrend={history.viiTrend}
               />
+              <BreathMetricsCard captures={history.captures} />
               <PVASummaryCard captures={history.captures} />
             </div>
           </div>
