@@ -36,16 +36,6 @@ export function rollupToBeds(rollup: PatientRollup, metadata?: PatientMetadata |
     const instValue = clamp(data.mean_instability * 100, 0, 100);
     const baseTier  = getSeverityFromInstability(instValue);
 
-    // Old age or a lung-injury diagnosis raises the floor to at least
-    // Elevated -- these patients can still reach Critical on real PVA
-    // data, but never show as fully "Normal" risk regardless of how their
-    // instability index averages out. Metadata is per-patient demographic/
-    // diagnosis data (out_real/patient_metadata.json), separate from and
-    // additional to the PVA-derived instability score.
-    const metaEntry = metadata?.[hash];
-    const highRisk  = isHighRisk(metaEntry);
-    const tier      = highRisk && baseTier === "Normal" ? "Elevated" : baseTier;
-
     // Dominant PVA flag (skip normal / unclassified)
     const pvaCounts = Object.entries(data.category_counts)
       .filter(([k]) => k !== "normal" && k !== "unclassified")
@@ -61,6 +51,19 @@ export function rollupToBeds(rollup: PatientRollup, metadata?: PatientMetadata |
       - (data.category_counts.unclassified ?? 0);
     const pvaBreathFrac = totalBreaths > 0 ? pvaBreadths / totalBreaths : 0;
     const confidence    = clamp(pvaBreathFrac * 1.4, 0, 0.95);
+
+    // "Normal" should mean no PVA at all, not just "the average happens to
+    // be low" -- a patient can have a large real PVA fraction (e.g. bed 04:
+    // 31.8% of breaths are real flow_starvation) and still average out
+    // under the instability threshold, since mean_instability dilutes
+    // across their WHOLE breath history. Any real PVA breath floors to at
+    // least Elevated; old age or a lung-injury diagnosis does the same
+    // (metadata is per-patient demographic/diagnosis data, out_real/
+    // patient_metadata.json, separate from and additional to PVA data).
+    // Both patients can still reach Critical on real PVA data alone.
+    const metaEntry = metadata?.[hash];
+    const highRisk  = isHighRisk(metaEntry);
+    const tier      = (pvaBreadths > 0 || highRisk) && baseTier === "Normal" ? "Elevated" : baseTier;
 
     // Whether to SHOW a dominant PVA flag depends only on whether one exists
     // (any real, non-normal/unclassified breaths) -- NOT on the patient's
